@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "coin-news"
+version = "0.1.0"
+description = "코인 뉴스 브리핑 AI 챗봇"
+authors = ["zen <didehdrb21@naver.com>"]
+readme = "README.md"
+packages = [{include = "app"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "^0.119.0"
+uvicorn = {extras = ["standard"], version = "^0.38.0"}
+python-dotenv = "^1.1.1"
+# LangChain 패키지들 추가
+langchain = "^0.3.0"
+langchain-core = "^0.3.0"
+langchain-openai = "^0.2.0"
+langchain-community = "^0.3.0"
+chromadb = "^0.4.18"
+pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+
+# Web Scrapping
+beautifulsoup4 = "^4.12.0"
+requests = "^2.31.0"
+lxml = "^4.9.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+black = "^23.12.0"
+flake8 = "^6.1.0"
+mypy = "^1.7.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
