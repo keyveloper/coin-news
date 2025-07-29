@@ -6,3 +6,5 @@ uvicorn==0.27.0
 lxml==5.1.0
 selenium==4.16.0
 webdriver-manager==4.0.1
+chromadb==0.4.22
+sentence-transformers==2.3.1
