@@ -2,7 +2,7 @@
 ChromaDB 사용 예제
 """
 from app.db.chroma_operations import ChromaNewsDB
-from app.crawlers.coinnews_crawler import CoinNewsCrawler
+from app.crawlers.coinness_crawler import CoinNewsCrawler
 
 
 def example_crawl_and_save():

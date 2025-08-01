@@ -76,11 +76,3 @@ class BaseCrawler:
         soup = BeautifulSoup(html, 'html.parser')
         return soup
 
-    @abstractmethod
-    def crawl(self):
-        """
-        Crawl each webpage - Analyze HTML structure
-        :return:
-        """
-        return
-

@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from app.crawlers.coinnews_crawler import CoinNewsCrawler
+from app.crawlers.coinness_crawler import CoinNewsCrawler
 from pathlib import Path
 
 load_dotenv()

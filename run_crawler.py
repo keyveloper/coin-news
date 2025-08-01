@@ -3,7 +3,7 @@
 CoinNewsCrawler를 실행하여 https://coinness.com/ 에 접속하고 데이터를 수집합니다.
 """
 
-from app.crawlers.coinnews_crawler import CoinNewsCrawler
+from app.crawlers.coinness_crawler import CoinNewsCrawler
 
 def main():
     # CoinNewsCrawler 인스턴스 생성

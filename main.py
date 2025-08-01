@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from dotenv import load_dotenv
-from app.api.test_route import test_router
+
+from app.api.coinness_router import coinness_router
+from app.api.test_router import test_router
+from app.api.bloomingbit_router import bloomingbit_router
 
 load_dotenv()
 
@@ -10,6 +13,8 @@ app = FastAPI(
     version="1.0.0"
 )
 app.include_router(test_router)
+app.include_router(coinness_router)
+app.include_router(bloomingbit_router)
 
 
 @app.get("/")

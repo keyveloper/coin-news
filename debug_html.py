@@ -3,7 +3,7 @@ HTML 구조 분석 디버깅 스크립트
 """
 import requests
 from bs4 import BeautifulSoup
-from app.crawlers.coinnews_crawler import CoinNewsCrawler
+from app.crawlers.coinness_crawler import CoinNewsCrawler
 
 
 def debug_html_structure():

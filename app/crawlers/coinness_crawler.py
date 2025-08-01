@@ -1,7 +1,7 @@
 from app.crawlers.base_crawler import BaseCrawler
 from urllib.parse import urljoin
 
-class CoinNewsCrawler(BaseCrawler):
+class CoinnessCrawler(BaseCrawler):
     def __init__(self):
         super().__init__("https://coinness.com/news")
 
@@ -49,7 +49,7 @@ class CoinNewsCrawler(BaseCrawler):
 
         return news_data
 
-    def crawl(self):
+    def get_news_list(self):
         """
         1. Selenium으로 HTML 가져오기
         2. BeautifulSoup 객체로 변환
