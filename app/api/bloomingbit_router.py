@@ -61,6 +61,41 @@ def get_ranking_news_urls(crawler: BloomingbitCrawler = Depends(get_bloomingbit_
             "traceback": traceback.format_exc()
         }
 
+@bloomingbit_router.get("/article-soup")
+def get_article_soup(crawler: BloomingbitCrawler = Depends(get_bloomingbit_crawler)):
+    try:
+        article_soup = crawler.get_soup("https://bloomingbit.io/feed/news/99546")
+        return {
+            "status": "success",
+            "message": "Soup 객체 크롤링 완료",
+            "soup": str(article_soup)
+        }
+    except Exception as error:
+        import traceback
+        return {
+            "status": "error",
+            "message": f"get_article_soup  오류 발생: {str(error)}",
+            "traceback": traceback.format_exc()
+        }
+
+@bloomingbit_router.get("/extracted-metadata")
+def extract_metadata(crawler: BloomingbitCrawler = Depends()):
+    try:
+        result = crawler.extract_article_metadata("https://bloomingbit.io/feed/news/99546")
+
+        return {
+            "status": "success",
+            "message": f"extract-metadata크롤링이 완료되었습니다.",
+            "result": result,
+        }
+    except Exception as error:
+        import traceback
+        return {
+            "status": "error",
+            "message": f"extract-metadata 크롤링 중 오류 발생: {str(error)}",
+            "traceback": traceback.format_exc()
+        }
+
 
 @bloomingbit_router.get("/news-list", response_model=MyCustomResponse)
 def get_news_list(crawler: BloomingbitCrawler = Depends(get_bloomingbit_crawler)):
