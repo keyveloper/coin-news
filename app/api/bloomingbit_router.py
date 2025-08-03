@@ -1,7 +1,14 @@
 from fastapi import APIRouter, Depends
-
+import traceback
 from app.crawlers.bloomingbit_crawler import BloomingbitCrawler
-from app.models.schemas import MyCustomResponse
+from app.models.schemas import MyCustomResponse, ChunkArticleRequest
+# Chunking libraries
+from langchain.text_splitter import (
+    RecursiveCharacterTextSplitter,
+    CharacterTextSplitter,
+    TokenTextSplitter
+)
+import tiktoken
 
 bloomingbit_router = APIRouter(prefix="/bloomingbit", tags=["bloomingbit"])
 
@@ -32,7 +39,6 @@ def get_soup(crawler: BloomingbitCrawler = Depends(get_bloomingbit_crawler)):
             "soup": str(soup)
         }
     except Exception as error:
-        import traceback
         return {
             "status": "error",
             "message": f"크롤링 중 오류 발생: {str(error)}",
@@ -54,7 +60,6 @@ def get_ranking_news_urls(crawler: BloomingbitCrawler = Depends(get_bloomingbit_
             "data": ranking_news
         }
     except Exception as error:
-        import traceback
         return {
             "status": "error",
             "message": f"랭킹 뉴스 크롤링 중 오류 발생: {str(error)}",
@@ -71,7 +76,6 @@ def get_article_soup(crawler: BloomingbitCrawler = Depends(get_bloomingbit_crawl
             "soup": str(article_soup)
         }
     except Exception as error:
-        import traceback
         return {
             "status": "error",
             "message": f"get_article_soup  오류 발생: {str(error)}",
@@ -89,10 +93,146 @@ def extract_metadata(crawler: BloomingbitCrawler = Depends()):
             "result": result,
         }
     except Exception as error:
-        import traceback
         return {
             "status": "error",
             "message": f"extract-metadata 크롤링 중 오류 발생: {str(error)}",
+            "traceback": traceback.format_exc()
+        }
+
+@bloomingbit_router.post("/chunking/article")
+def chunk_article(request: ChunkArticleRequest, crawler: BloomingbitCrawler = Depends(get_bloomingbit_crawler)):
+    """
+    다양한 Chunking 전략으로 텍스트 분할 테스트
+    """
+    try:
+        content = request.content
+        results = {}
+
+        # === 1. RecursiveCharacterTextSplitter (가장 추천) ===
+        print("=" * 50)
+        print("1. RecursiveCharacterTextSplitter (LangChain)")
+        print("=" * 50)
+
+        recursive_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50,
+            length_function=len,
+            separators=["\n\n", "\n", ". ", " ", ""]
+        )
+        recursive_chunks = recursive_splitter.split_text(content)
+        results['recursive_character_splitter'] = {
+            "description": "계층적으로 분할 (문단 → 문장 → 단어). RAG에 가장 적합",
+            "chunk_count": len(recursive_chunks),
+            "chunks": recursive_chunks,
+            "avg_chunk_length": sum(len(c) for c in recursive_chunks) / len(recursive_chunks) if recursive_chunks else 0
+        }
+        print(f"청크 개수: {len(recursive_chunks)}")
+
+        # === 2. CharacterTextSplitter ===
+        print("\n" + "=" * 50)
+        print("2. CharacterTextSplitter (LangChain)")
+        print("=" * 50)
+
+        char_splitter = CharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50,
+            separator="\n"
+        )
+        char_chunks = char_splitter.split_text(content)
+        results['character_splitter'] = {
+            "description": "단일 구분자로 분할 (예: 개행문자)",
+            "chunk_count": len(char_chunks),
+            "chunks": char_chunks,
+            "avg_chunk_length": sum(len(c) for c in char_chunks) / len(char_chunks) if char_chunks else 0
+        }
+        print(f"청크 개수: {len(char_chunks)}")
+
+        # === 3. TokenTextSplitter (OpenAI 토큰 기반) ===
+        print("\n" + "=" * 50)
+        print("3. TokenTextSplitter (LangChain + tiktoken)")
+        print("=" * 50)
+
+        token_splitter = TokenTextSplitter(
+            chunk_size=200,  # 토큰 단위
+            chunk_overlap=20
+        )
+        token_chunks = token_splitter.split_text(content)
+        results['token_splitter'] = {
+            "description": "OpenAI 토큰 기반 분할 (GPT 모델에 최적)",
+            "chunk_count": len(token_chunks),
+            "chunks": token_chunks,
+            "avg_chunk_length": sum(len(c) for c in token_chunks) / len(token_chunks) if token_chunks else 0
+        }
+        print(f"청크 개수: {len(token_chunks)}")
+
+        # === 4. tiktoken 직접 사용 ===
+        print("\n" + "=" * 50)
+        print("4. tiktoken (OpenAI 공식)")
+        print("=" * 50)
+
+        encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+        tokens = encoding.encode(content)
+        token_count = len(tokens)
+
+        # 토큰을 청크로 나누기
+        chunk_size_tokens = 200
+        tiktoken_chunks = []
+        for i in range(0, len(tokens), chunk_size_tokens):
+            chunk_tokens = tokens[i:i + chunk_size_tokens]
+            chunk_text = encoding.decode(chunk_tokens)
+            tiktoken_chunks.append(chunk_text)
+
+        results['tiktoken_direct'] = {
+            "description": "OpenAI tiktoken으로 직접 토큰화 후 분할",
+            "total_tokens": token_count,
+            "chunk_count": len(tiktoken_chunks),
+            "chunks": tiktoken_chunks,
+            "avg_tokens_per_chunk": token_count / len(tiktoken_chunks) if tiktoken_chunks else 0
+        }
+        print(f"총 토큰 수: {token_count}")
+        print(f"청크 개수: {len(tiktoken_chunks)}")
+
+        # === 5. 단순 문장 분할 (기본) ===
+        print("\n" + "=" * 50)
+        print("5. Simple Sentence Splitter (기본)")
+        print("=" * 50)
+
+        simple_chunks = content.split('. ')
+        simple_chunks = [c.strip() + '.' for c in simple_chunks if c.strip()]
+        results['simple_sentence'] = {
+            "description": "마침표 기준 문장 단위 분할",
+            "chunk_count": len(simple_chunks),
+            "chunks": simple_chunks,
+            "avg_chunk_length": sum(len(c) for c in simple_chunks) / len(simple_chunks) if simple_chunks else 0
+        }
+        print(f"청크 개수: {len(simple_chunks)}")
+
+        # === 요약 통계 ===
+        summary = {
+            "original_text_length": len(content),
+            "methods_tested": len(results),
+            "recommendations": {
+                "for_rag": "recursive_character_splitter - 의미 단위 보존",
+                "for_openai": "token_splitter or tiktoken_direct - 토큰 제한 관리",
+                "for_simple": "simple_sentence - 빠르고 간단"
+            }
+        }
+
+        print("\n" + "=" * 50)
+        print("Chunking 테스트 완료!")
+        print("=" * 50)
+
+        return {
+            "status": "success",
+            "message": "5가지 chunking 전략으로 텍스트 분할 완료",
+            "summary": summary,
+            "results": results
+        }
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Chunking 중 오류 발생: {str(error)}",
             "traceback": traceback.format_exc()
         }
 
@@ -111,7 +251,6 @@ def get_news_list(crawler: BloomingbitCrawler = Depends(get_bloomingbit_crawler)
             "result": result,
         }
     except Exception as error:
-        import traceback
         return {
             "status": "error",
             "message": f"크롤링 중 오류 발생: {str(error)}",

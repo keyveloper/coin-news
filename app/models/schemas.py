@@ -36,3 +36,6 @@ class MyCustomResponse(BaseModel):
 class MyCustomRequest(BaseModel):
     name: str
     age: int
+
+class ChunkArticleRequest(BaseModel):
+    content: str
