@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 
 class ChatRequest(BaseModel):
     """
@@ -39,3 +39,6 @@ class MyCustomRequest(BaseModel):
 
 class ChunkArticleRequest(BaseModel):
     content: str
+
+class EmbeddingChunkRequest(BaseModel):
+    chunks: List[str] = Field(..., description="List of text chunks to embed")

@@ -1,19 +1,23 @@
 from fastapi import APIRouter, Depends
 import traceback
 from app.crawlers.bloomingbit_crawler import BloomingbitCrawler
-from app.models.schemas import MyCustomResponse, ChunkArticleRequest
+from app.models.schemas import MyCustomResponse, ChunkArticleRequest, EmbeddingChunkRequest
 # Chunking libraries
-from langchain.text_splitter import (
+from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
     CharacterTextSplitter,
     TokenTextSplitter
 )
 import tiktoken
+# Embedding
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from typing import List
 
 bloomingbit_router = APIRouter(prefix="/bloomingbit", tags=["bloomingbit"])
 
 # 싱글톤 인스턴스를 반환하는 의존성 함수
 _crawler_instance = None
+_embedding_model = None
 
 def get_bloomingbit_crawler() -> BloomingbitCrawler:
     """
@@ -24,6 +28,21 @@ def get_bloomingbit_crawler() -> BloomingbitCrawler:
     if _crawler_instance is None:
         _crawler_instance = BloomingbitCrawler()
     return _crawler_instance
+
+def get_embedding_model() -> HuggingFaceEmbeddings:
+    """
+    HuggingFaceEmbeddings 싱글톤 인스턴스 반환
+    다국어 지원 모델 사용 (한국어 포함)
+    """
+    global _embedding_model
+    if _embedding_model is None:
+        # 다국어 지원 임베딩 모델 (한국어, 영어 모두 지원)
+        _embedding_model = HuggingFaceEmbeddings(
+            model_name="paraphrase-multilingual-MiniLM-L12-v2",
+            model_kwargs={'device': 'cpu'},
+            encode_kwargs={'normalize_embeddings': True}
+        )
+    return _embedding_model
 
 
 @bloomingbit_router.get("/soup")
@@ -100,7 +119,7 @@ def extract_metadata(crawler: BloomingbitCrawler = Depends()):
         }
 
 @bloomingbit_router.post("/chunking/article")
-def chunk_article(request: ChunkArticleRequest, crawler: BloomingbitCrawler = Depends(get_bloomingbit_crawler)):
+def chunk_article(request: ChunkArticleRequest):
     """
     다양한 Chunking 전략으로 텍스트 분할 테스트
     """
@@ -233,6 +252,67 @@ def chunk_article(request: ChunkArticleRequest, crawler: BloomingbitCrawler = De
         return {
             "status": "error",
             "message": f"Chunking 중 오류 발생: {str(error)}",
+            "traceback": traceback.format_exc()
+        }
+
+
+@bloomingbit_router.post("/embedding-chunk")
+def embed_chunk(
+    request: EmbeddingChunkRequest,
+    embeddings_model: HuggingFaceEmbeddings = Depends(get_embedding_model)
+):
+    """
+    텍스트 청크 리스트를 임베딩 벡터로 변환 (LangChain)
+
+    Args:
+        request: chunks 필드에 문자열 리스트 포함
+        embeddings_model: HuggingFaceEmbeddings 모델 (자동 주입)
+
+    Returns:
+        embeddings: 각 청크에 대한 임베딩 벡터 리스트
+        model_info: 사용된 모델 정보
+        statistics: 임베딩 통계
+    """
+    try:
+        chunks = request.chunks
+
+        if not chunks:
+            return {
+                "status": "error",
+                "message": "청크 리스트가 비어있습니다.",
+                "data": None
+            }
+
+        # LangChain의 embed_documents 메서드 사용
+        embeddings_list = embeddings_model.embed_documents(chunks)
+
+        # 통계 정보
+        statistics = {
+            "total_chunks": len(chunks),
+            "embedding_dimension": len(embeddings_list[0]) if embeddings_list else 0,
+            "model_name": "paraphrase-multilingual-MiniLM-L12-v2",
+            "avg_chunk_length": sum(len(c) for c in chunks) / len(chunks) if chunks else 0
+        }
+
+        return {
+            "status": "success",
+            "message": f"{len(chunks)}개의 청크를 임베딩으로 변환 완료",
+            "data": {
+                "embeddings": embeddings_list,
+                "statistics": statistics,
+                "model_info": {
+                    "name": "paraphrase-multilingual-MiniLM-L12-v2",
+                    "description": "다국어 지원 임베딩 모델 (한국어, 영어 등 50+ 언어)",
+                    "dimension": statistics["embedding_dimension"],
+                    "max_sequence_length": 128
+                }
+            }
+        }
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"임베딩 생성 중 오류 발생: {str(error)}",
             "traceback": traceback.format_exc()
         }
 
