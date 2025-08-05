@@ -12,6 +12,9 @@ import tiktoken
 # Embedding
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from typing import List
+# ChromaDB
+import chromadb
+from chromadb.config import Settings
 
 bloomingbit_router = APIRouter(prefix="/bloomingbit", tags=["bloomingbit"])
 
@@ -315,6 +318,140 @@ def embed_chunk(
             "message": f"임베딩 생성 중 오류 발생: {str(error)}",
             "traceback": traceback.format_exc()
         }
+
+@bloomingbit_router.get("/vectorDB")
+def save_to_vector_db(
+    url: str = "https://bloomingbit.io/feed/news/99554",
+    crawler: BloomingbitCrawler = Depends(get_bloomingbit_crawler),
+    embeddings_model: HuggingFaceEmbeddings = Depends(get_embedding_model)
+):
+    """
+    뉴스 기사를 크롤링 → 메타데이터 추출 → 청킹 → 임베딩 → ChromaDB 저장
+
+    Args:
+        url: 크롤링할 뉴스 기사 URL
+        crawler: BloomingbitCrawler 인스턴스
+        embeddings_model: HuggingFaceEmbeddings 모델
+
+    Returns:
+        저장 성공 여부와 저장된 데이터 정보
+    """
+    try:
+        # 1. 메타데이터 추출
+        print(f"[1/4] 메타데이터 추출 중... URL: {url}")
+        metadata = crawler.extract_article_metadata(url)
+        content = metadata.get('content', '')
+
+        if not content:
+            return {
+                "status": "error",
+                "message": "기사 본문을 가져올 수 없습니다.",
+                "data": None
+            }
+
+        # 2. 청킹 (RecursiveCharacterTextSplitter 사용)
+        print(f"[2/4] 청킹 중... 원본 텍스트 길이: {len(content)}")
+        recursive_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50,
+            length_function=len,
+            separators=["\n\n", "\n", ". ", " ", ""]
+        )
+        chunks = recursive_splitter.split_text(content)
+        print(f"생성된 청크 개수: {len(chunks)}")
+
+        # 3. 임베딩 생성
+        print(f"[3/4] 임베딩 생성 중...")
+        embeddings_list = embeddings_model.embed_documents(chunks)
+        print(f"임베딩 벡터 차원: {len(embeddings_list[0])}")
+
+        # 4. ChromaDB에 저장
+        print(f"[4/4] ChromaDB에 저장 중...")
+
+        # ChromaDB 클라이언트 생성
+        chroma_client = chromadb.PersistentClient(
+            path="./chroma_db",  # 데이터 저장 경로
+            settings=Settings(
+                anonymized_telemetry=False,
+                allow_reset=True
+            )
+        )
+
+        # 컬렉션 생성 또는 가져오기
+        collection_name = "bloomingbit_news"
+        try:
+            collection = chroma_client.get_collection(name=collection_name)
+            print(f"기존 컬렉션 '{collection_name}' 사용")
+        except:
+            collection = chroma_client.create_collection(
+                name=collection_name,
+                metadata={"description": "Bloomingbit 뉴스 기사 임베딩"}
+            )
+            print(f"새 컬렉션 '{collection_name}' 생성")
+
+        # 메타데이터 준비 (각 청크마다)
+        metadatas = []
+        ids = []
+        for i, chunk in enumerate(chunks):
+            chunk_metadata = {
+                "source_url": url,
+                "title": metadata.get('title') or '',
+                "author": metadata.get('author') or '',
+                "published_date": metadata.get('published_date') or '',
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+                "chunk_text": chunk[:200]  # 미리보기용 (처음 200자)
+            }
+
+            # ChromaDB는 None 값을 허용하지 않으므로 None 값 제거
+            chunk_metadata = {k: v for k, v in chunk_metadata.items() if v is not None and v != ''}
+
+            # 필수 필드는 유지 (chunk_index, total_chunks)
+            chunk_metadata["chunk_index"] = i
+            chunk_metadata["total_chunks"] = len(chunks)
+            chunk_metadata["source_url"] = url
+
+            metadatas.append(chunk_metadata)
+
+            # 고유 ID 생성 (URL + 청크 인덱스)
+            article_id = url.split('/')[-1]  # 예: 99546
+            ids.append(f"{article_id}_chunk_{i}")
+
+        # ChromaDB에 데이터 저장
+        collection.add(
+            embeddings=embeddings_list,
+            documents=chunks,
+            metadatas=metadatas,
+            ids=ids
+        )
+
+        print(f"✅ ChromaDB 저장 완료! 총 {len(chunks)}개 청크 저장됨")
+
+        # 저장된 데이터 확인
+        collection_count = collection.count()
+
+        return {
+            "status": "success",
+            "message": f"ChromaDB에 {len(chunks)}개의 청크를 성공적으로 저장했습니다.",
+            "data": {
+                "url": url,
+                "title": metadata.get('title', ''),
+                "total_chunks": len(chunks),
+                "embedding_dimension": len(embeddings_list[0]),
+                "collection_name": collection_name,
+                "collection_total_count": collection_count,
+                "saved_ids": ids,
+                "sample_metadata": metadatas[0] if metadatas else None
+            }
+        }
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Vector DB 저장 중 오류 발생: {str(error)}",
+            "traceback": traceback.format_exc()
+        }
+
 
 
 @bloomingbit_router.get("/news-list", response_model=MyCustomResponse)

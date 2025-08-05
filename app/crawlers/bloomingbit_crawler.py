@@ -212,5 +212,6 @@ class BloomingbitCrawler(BaseCrawler):
             self.close_selenium()
 
 
+
     def get_news_list(self):
         pass
