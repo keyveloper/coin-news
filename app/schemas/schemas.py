@@ -27,15 +27,6 @@ class ScrapeResponse(BaseModel):
     message: str = Field(..., description="Status message")
     num_articles: Optional[int] = Field(None, description="Number of articles scraped")
 
-class MyCustomResponse(BaseModel):
-    """
-    Response model for testing
-    """
-    message: str = Field(..., description="Status message")
-
-class MyCustomRequest(BaseModel):
-    name: str
-    age: int
 
 class ChunkArticleRequest(BaseModel):
     content: str

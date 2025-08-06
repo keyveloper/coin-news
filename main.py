@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from dotenv import load_dotenv
 
-from app.api.coinness_router import coinness_router
-from app.api.test_router import test_router
-from app.api.bloomingbit_router import bloomingbit_router
+from app.api.v1.endpoint.coinness_router import coinness_router
+from app.api.v1.endpoint.test_router import test_router
+from app.api.v1.endpoint.bloomingbit_router import bloomingbit_router
 
 load_dotenv()
 

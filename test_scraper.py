@@ -1,7 +1,7 @@
 """
 BeautifulSoup 크롤링 테스트 스크립트
 """
-from app.services.scraper import coin_news_scrape
+from app.services.langchain import coin_news_scrape
 
 
 def main():
