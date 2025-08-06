@@ -1,7 +1,7 @@
 """
 ChromaDB 사용 예제
 """
-from app.db.chroma_operations import ChromaNewsDB
+from app.repository.chroma_operations import ChromaNewsDB
 from app.crawlers.coinness_crawler import CoinNewsCrawler
 
 

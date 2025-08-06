@@ -42,3 +42,6 @@ class ChunkArticleRequest(BaseModel):
 
 class EmbeddingChunkRequest(BaseModel):
     chunks: List[str] = Field(..., description="List of text chunks to embed")
+
+class QueryRequest(BaseModel):
+    query: str

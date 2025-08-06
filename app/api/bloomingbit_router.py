@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 import traceback
 from app.crawlers.bloomingbit_crawler import BloomingbitCrawler
-from app.models.schemas import MyCustomResponse, ChunkArticleRequest, EmbeddingChunkRequest
+from app.schemas.schemas import MyCustomResponse, ChunkArticleRequest, EmbeddingChunkRequest, QueryRequest
 # Chunking libraries
 from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
@@ -11,7 +11,6 @@ from langchain_text_splitters import (
 import tiktoken
 # Embedding
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from typing import List
 # ChromaDB
 import chromadb
 from chromadb.config import Settings
@@ -449,6 +448,145 @@ def save_to_vector_db(
         return {
             "status": "error",
             "message": f"Vector DB 저장 중 오류 발생: {str(error)}",
+            "traceback": traceback.format_exc()
+        }
+
+
+@bloomingbit_router.post("/query")
+def get_by_query(
+    request: QueryRequest,
+    embeddings_model: HuggingFaceEmbeddings = Depends(get_embedding_model)
+):
+    """
+    사용자 쿼리를 기반으로 ChromaDB에서 관련 뉴스 검색 (Semantic Search)
+
+    Args:
+        request: 사용자 검색 쿼리
+        embeddings_model: HuggingFaceEmbeddings 모델
+
+    Returns:
+        관련도가 높은 뉴스 청크와 메타데이터 반환
+    """
+    try:
+        query = request.query
+
+        if not query or query.strip() == '':
+            return {
+                "status": "error",
+                "message": "검색 쿼리가 비어있습니다.",
+                "data": None
+            }
+
+        print(f"[1/3] 검색 쿼리: {query}")
+
+        # 1. 쿼리를 임베딩으로 변환
+        print(f"[2/3] 쿼리 임베딩 생성 중...")
+        query_embedding = embeddings_model.embed_query(query)
+        print(f"임베딩 벡터 차원: {len(query_embedding)}")
+
+        # 2. ChromaDB 클라이언트 생성 및 컬렉션 가져오기
+        print(f"[3/3] ChromaDB에서 유사한 문서 검색 중...")
+        chroma_client = chromadb.PersistentClient(
+            path="./chroma_db",
+            settings=Settings(
+                anonymized_telemetry=False,
+                allow_reset=True
+            )
+        )
+
+        # 컬렉션 가져오기
+        collection_name = "bloomingbit_news"
+        try:
+            collection = chroma_client.get_collection(name=collection_name)
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"컬렉션 '{collection_name}'을 찾을 수 없습니다. 먼저 /vectorDB 엔드포인트로 데이터를 저장하세요.",
+                "data": None
+            }
+
+        # 3. 유사도 검색 (상위 5개 결과 반환)
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=5,  # 상위 5개 결과
+            include=["documents", "metadatas", "distances"]
+        )
+
+        # 4. 결과 포맷팅
+        if not results['ids'] or len(results['ids'][0]) == 0:
+            return {
+                "status": "success",
+                "message": "검색 결과가 없습니다.",
+                "data": {
+                    "query": query,
+                    "total_results": 0,
+                    "results": []
+                }
+            }
+
+        # 검색 결과를 보기 좋게 포맷팅
+        formatted_results = []
+        for i in range(len(results['ids'][0])):
+            result_item = {
+                "rank": i + 1,
+                "id": results['ids'][0][i],
+                "similarity_score": 1 - results['distances'][0][i],  # distance를 similarity로 변환
+                "distance": results['distances'][0][i],
+                "content": results['documents'][0][i],
+                "metadata": results['metadatas'][0][i]
+            }
+            formatted_results.append(result_item)
+
+        # 5. 기사별로 그룹핑 (같은 기사의 여러 청크를 그룹화)
+        articles = {}
+        for result in formatted_results:
+            source_url = result['metadata'].get('source_url', 'unknown')
+            if source_url not in articles:
+                articles[source_url] = {
+                    "source_url": source_url,
+                    "title": result['metadata'].get('title', '제목 없음'),
+                    "author": result['metadata'].get('author', '작성자 미상'),
+                    "published_date": result['metadata'].get('published_date', '날짜 미상'),
+                    "relevant_chunks": [],
+                    "max_similarity": 0
+                }
+
+            articles[source_url]['relevant_chunks'].append({
+                "rank": result['rank'],
+                "chunk_index": result['metadata'].get('chunk_index', 0),
+                "similarity_score": result['similarity_score'],
+                "content": result['content']
+            })
+
+            # 최고 유사도 업데이트
+            if result['similarity_score'] > articles[source_url]['max_similarity']:
+                articles[source_url]['max_similarity'] = result['similarity_score']
+
+        # 유사도 순으로 정렬
+        sorted_articles = sorted(
+            articles.values(),
+            key=lambda x: x['max_similarity'],
+            reverse=True
+        )
+
+        print(f"✅ 검색 완료! {len(formatted_results)}개의 청크를 찾았습니다.")
+
+        return {
+            "status": "success",
+            "message": f"'{query}' 관련 검색 결과 {len(formatted_results)}개를 찾았습니다.",
+            "data": {
+                "query": query,
+                "total_results": len(formatted_results),
+                "total_articles": len(articles),
+                "detailed_chunks": formatted_results,  # 개별 청크 상세 정보
+                "grouped_by_article": sorted_articles  # 기사별 그룹화
+            }
+        }
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"검색 중 오류 발생: {str(error)}",
             "traceback": traceback.format_exc()
         }
 

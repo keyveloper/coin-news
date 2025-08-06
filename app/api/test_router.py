@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 
-from app.models.schemas import MyCustomResponse, MyCustomRequest
+from app.schemas.schemas import MyCustomResponse, MyCustomRequest
 
 test_router = APIRouter(prefix="/coinness", tags=["coinness"])
 
