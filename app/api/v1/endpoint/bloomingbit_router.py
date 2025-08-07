@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends
 import traceback
 from app.crawlers.bloomingbit_crawler import BloomingbitCrawler
-from app.schemas.schemas import MyCustomResponse, ChunkArticleRequest, EmbeddingChunkRequest, QueryRequest
+from app.schemas.schemas import  ChunkArticleRequest, EmbeddingChunkRequest, QueryRequest
+from app.schemas.test import MyCustomResponse
 # Chunking libraries
 from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
