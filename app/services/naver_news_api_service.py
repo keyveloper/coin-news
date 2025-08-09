@@ -4,12 +4,17 @@ import requests
 from typing import List, Dict, Optional
 from datetime import datetime
 import re
+import logging
 from urllib.parse import quote
 from app.schemas.naver_news import (
     NaverNewsRequest,
     NaverNewsAPIResponse,
     NaverNewsItem
 )
+
+# 로거 설정
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 class NaverNewsAPIClient:
@@ -20,9 +25,10 @@ class NaverNewsAPIClient:
         client_id: Optional[str] = None,
         client_secret: Optional[str] = None
     ):
-        self.client_id = client_id or os.getenv("NAVER_CLIENT_ID", "USER_SECRET")
-        self.client_secret = client_secret or os.getenv("NAVER_CLIENT_SECRET", "USER_SECRET")
+        self.client_id = client_id or os.getenv("X-Naver-Client-Id")
+        self.client_secret = client_secret or os.getenv("X-Naver-Client-Secret")
         self.base_url = "https://openapi.naver.com/v1/search/news.json"
+
 
     def search_news(
         self,

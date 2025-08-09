@@ -1,7 +1,7 @@
 """Naver News API 라우터"""
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
-from app.services.naver_news_api import NaverNewsAPIClient
+from app.services.naver_news_api_service import NaverNewsAPIClient
 from app.schemas.naver_news import NaverNewsAPIResponse
 
 naver_news_router = APIRouter(prefix="/naver-news", tags=["naver-news"])

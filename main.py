@@ -1,10 +1,7 @@
 from fastapi import FastAPI
 from dotenv import load_dotenv
 
-from app.api.v1.endpoint.coinness_router import coinness_router
-from app.api.v1.endpoint.test_router import test_router
-from app.api.v1.endpoint.bloomingbit_router import bloomingbit_router
-from app.api.v1.endpoint.naver_news_router import naver_news_router
+from app.api.routers import api_router
 
 load_dotenv()
 
@@ -13,10 +10,9 @@ app = FastAPI(
     description="Summarize Coin issue and crypto market",
     version="1.0.0"
 )
-app.include_router(test_router)
-app.include_router(coinness_router)
-app.include_router(bloomingbit_router)
-app.include_router(naver_news_router)
+
+# API 라우터 등록
+app.include_router(api_router)
 
 
 @app.get("/")
