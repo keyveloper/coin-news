@@ -3,9 +3,9 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from app.services.naver_news_api_service import NaverNewsAPIClient
 from app.schemas.naver_news import NaverNewsAPIResponse
+from app.services.loader_service import extractNewsMetadataFromUrl
 
 naver_news_router = APIRouter(prefix="/naver-news", tags=["naver-news"])
-
 # 싱글톤 인스턴스
 _naver_client_instance = None
 
@@ -44,6 +44,29 @@ def get_bitcoin_news(
             sort=sort
         )
 
+        # response 내부의 originallink로 들어가서 실제 뉴스 데이터를 Loader
+        originallinks = [item.originallink for item in response.items]
+
+        # 각 링크에서 메타데이터 추출
+        metadata_list = []
+        for link in originallinks:
+            try:
+                docs = extractNewsMetadataFromUrl(link)
+                metadata_list.append({
+                    "url": link,
+                    "documents": [
+                        {
+                            "metadata": doc.metadata,
+                            "page_content": doc.page_content
+                        } for doc in docs
+                    ]
+                })
+            except Exception as e:
+                metadata_list.append({
+                    "url": link,
+                    "error": str(e)
+                })
+
         return {
             "status": "success",
             "message": f"비트코인 관련 뉴스 {len(response.items)}건을 가져왔습니다.",
@@ -52,7 +75,8 @@ def get_bitcoin_news(
                 "total": response.total,
                 "start": response.start,
                 "display": response.display,
-                "items": [item.model_dump() for item in response.items]
+                "items": [item.model_dump() for item in response.items],
+                "metadata": metadata_list
             }
         }
     except Exception as e:
