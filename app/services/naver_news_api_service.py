@@ -30,7 +30,7 @@ class NaverNewsAPIClient:
         self.base_url = "https://openapi.naver.com/v1/search/news.json"
 
 
-    def search_news(
+    def fetch_news(
         self,
         query: str,
         display: int = 10,

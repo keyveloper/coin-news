@@ -36,3 +36,6 @@ class NaverNewsAPIResponse(BaseModel):
     start: int
     display: int
     items: List[NaverNewsItem]
+
+class NaverNewsFinalResult(BaseModel):
+    pass
