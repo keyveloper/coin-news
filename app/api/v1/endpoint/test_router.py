@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from app.schemas.test import MyCustomResponse, MyCustomRequest
+from app.services.naver_news_search_service import NaverNewsSearchService
 
 test_router = APIRouter(prefix="/test", tags=["test"])
 
@@ -145,3 +146,31 @@ def get_soup(url: str = Query(..., description="분석할 뉴스 사이트 URL")
         raise HTTPException(status_code=400, detail=f"URL 요청 실패: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"HTML 파싱 오류: {str(e)}")
+
+
+@test_router.get("/news-distribution", response_model=dict)
+def analyze_news_distribution(
+    query: str = Query(..., description="검색어"),
+    iterations: int = Query(description="반복 횟수"),
+    display: int = Query(default=100, description="한 번에 가져올 뉴스 개수")
+):
+    """
+    뉴스 사이트 분포도 분석
+
+    Args:
+        query: 검색어
+        iterations: 반복 횟수 (1~20)
+        display: 한 번에 가져올 뉴스 개수 (1~100)
+
+    Returns:
+        뉴스 사이트별 분포 통계
+    """
+    try:
+        service = NaverNewsSearchService()
+        return service.analyze_news_site_distribution(
+            query=query,
+            iterations=iterations,
+            display=display
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
