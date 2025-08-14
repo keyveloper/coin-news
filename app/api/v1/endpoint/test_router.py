@@ -4,6 +4,8 @@ from bs4 import BeautifulSoup
 
 from app.schemas.test import MyCustomResponse, MyCustomRequest
 from app.services.naver_news_search_service import NaverNewsSearchService
+from app.parser.coinreaders_parser import parse_coinreaders_news
+from app.parser.digitaltoday_parser import parse_digitaltoday_news
 
 test_router = APIRouter(prefix="/test", tags=["test"])
 
@@ -174,3 +176,71 @@ def analyze_news_distribution(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
+
+
+@test_router.get("/parse-coinreaders", response_model=dict)
+def parse_coinreaders(url: str = Query(..., description="CoinReaders 뉴스 URL")):
+    """
+    CoinReaders 뉴스 메타데이터 추출 테스트
+
+    Args:
+        url: CoinReaders 뉴스 URL
+
+    Returns:
+        추출된 뉴스 메타데이터 (제목, 기자, 날짜, 본문)
+    """
+    try:
+        # HTTP 요청
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        # CoinReaders 파서 실행
+        result_data = parse_coinreaders_news(response.text, url)
+
+        return {
+            "status": "success",
+            "message": "CoinReaders 뉴스 데이터 추출 완료",
+            "data": result_data
+        }
+
+    except requests.RequestException as e:
+        raise HTTPException(status_code=400, detail=f"URL 요청 실패: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파싱 오류: {str(e)}")
+
+
+@test_router.get("/parse-digitaltoday", response_model=dict)
+def parse_digitaltoday(url: str = Query(..., description="DigitalToday 뉴스 URL")):
+    """
+    DigitalToday 뉴스 메타데이터 추출 테스트
+
+    Args:
+        url: DigitalToday 뉴스 URL
+
+    Returns:
+        추출된 뉴스 메타데이터 (제목, 기자, 날짜, 본문)
+    """
+    try:
+        # HTTP 요청
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        # DigitalToday 파서 실행
+        result_data = parse_digitaltoday_news(response.text, url)
+
+        return {
+            "status": "success",
+            "message": "DigitalToday 뉴스 데이터 추출 완료",
+            "data": result_data
+        }
+
+    except requests.RequestException as e:
+        raise HTTPException(status_code=400, detail=f"URL 요청 실패: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파싱 오류: {str(e)}")
