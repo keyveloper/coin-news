@@ -6,6 +6,7 @@ from app.schemas.test import MyCustomResponse, MyCustomRequest
 from app.services.naver_news_search_service import NaverNewsSearchService
 from app.parser.coinreaders_parser import parse_coinreaders_news
 from app.parser.digitaltoday_parser import parse_digitaltoday_news
+from app.parser.tokenpost_parser import parse_tokenpost_news
 
 test_router = APIRouter(prefix="/test", tags=["test"])
 
@@ -26,13 +27,13 @@ def read_body(request: MyCustomRequest):
 @test_router.get("/soup", response_model=dict)
 def get_soup(url: str = Query(..., description="분석할 뉴스 사이트 URL")):
     """
-    URL의 HTML 구조 분석
+    URL의 HTML Raw 데이터 조회
 
     Args:
         url: 분석할 뉴스 사이트 URL
 
     Returns:
-        HTML 구조 분석 결과
+        기본 정보와 HTML raw 데이터
     """
     try:
         # HTTP 요청
@@ -45,104 +46,28 @@ def get_soup(url: str = Query(..., description="분석할 뉴스 사이트 URL")
         # BeautifulSoup으로 파싱
         soup = BeautifulSoup(response.content, 'html.parser')
 
-        # TokenPost URL 체크
-        if 'tokenpost' in url.lower():
-            # TokenPost 전용 파싱
-            result_data = {
-                "url": url,
-                "title": None,
-                "published_date": None,
-                "reporter_name": None,
-                "article_content": None
+        # 기본 정보
+        basic_info = {
+            "url": url,
+            "status_code": response.status_code,
+            "content_type": response.headers.get('Content-Type'),
+            "title": soup.title.string if soup.title else None,
+            "paragraphs_count": len(soup.find_all('p')),
+            "images_count": len(soup.find_all('img')),
+            "links_count": len(soup.find_all('a'))
+        }
+
+        # Raw HTML (prettified)
+        html_raw = soup.prettify()
+
+        return {
+            "status": "success",
+            "message": "HTML 데이터 조회 완료",
+            "data": {
+                "basic_info": basic_info,
+                "html_raw": html_raw
             }
-
-            # 1. 뉴스 제목 (title 태그)
-            if soup.title:
-                result_data['title'] = soup.title.string
-
-            # 2. 발행 날짜 (<time> 태그)
-            time_tag = soup.find('time')
-            if time_tag:
-                result_data['published_date'] = time_tag.get_text(strip=True)
-
-            # 3. 기자 이름 (class="view_title_bottom_name")
-            reporter_name = soup.find(class_='view_title_bottom_name')
-            if reporter_name:
-                result_data['reporter_name'] = reporter_name.get_text(strip=True)
-
-            # 4. 본문 내용 (class="article_content")
-            article_content = soup.find('div', class_='article_content')
-            if article_content:
-                result_data['article_content'] = article_content.get_text(strip=True)
-
-            return {
-                "status": "success",
-                "message": "TokenPost 뉴스 데이터 추출 완료",
-                "data": result_data
-            }
-
-        else:
-            # 일반 URL - 전체 HTML 구조 분석
-            structure_info = {
-                "url": url,
-                "title": soup.title.string if soup.title else None,
-                "meta_tags": [],
-                "headings": {},
-                "paragraphs_count": len(soup.find_all('p')),
-                "images_count": len(soup.find_all('img')),
-                "links_count": len(soup.find_all('a')),
-                "main_content_candidates": [],
-                "article_candidates": []
-            }
-
-            # Meta 태그 추출
-            for meta in soup.find_all('meta')[:10]:
-                meta_info = {
-                    "name": meta.get('name') or meta.get('property'),
-                    "content": meta.get('content')
-                }
-                if meta_info['name']:
-                    structure_info['meta_tags'].append(meta_info)
-
-            # 제목 태그 분석
-            for i in range(1, 7):
-                headings = soup.find_all(f'h{i}')
-                if headings:
-                    structure_info['headings'][f'h{i}'] = [h.get_text(strip=True) for h in headings[:5]]
-
-            # 주요 콘텐츠 후보 찾기
-            content_candidates = soup.find_all(['article', 'main'])
-            for elem in content_candidates[:3]:
-                structure_info['article_candidates'].append({
-                    'tag': elem.name,
-                    'class': elem.get('class'),
-                    'id': elem.get('id'),
-                    'text_preview': elem.get_text(strip=True)[:200]
-                })
-
-            # div.content, div.article 등 찾기
-            divs_with_content = soup.find_all('div', class_=lambda x: x and ('content' in str(x).lower() or 'article' in str(x).lower()))
-            for div in divs_with_content[:3]:
-                structure_info['main_content_candidates'].append({
-                    'tag': div.name,
-                    'class': div.get('class'),
-                    'id': div.get('id'),
-                    'text_preview': div.get_text(strip=True)[:200]
-                })
-
-            # 전체 HTML 미리보기 (script, style 제거)
-            soup_copy = BeautifulSoup(soup.prettify(), 'html.parser')
-            for script in soup_copy.find_all('script'):
-                script.decompose()
-            for style in soup_copy.find_all('style'):
-                style.decompose()
-            structure_info['html_preview'] = soup_copy.prettify()
-
-            return {
-                "status": "success",
-                "message": "HTML 구조 분석 완료",
-                "data": structure_info
-            }
+        }
 
     except requests.RequestException as e:
         raise HTTPException(status_code=400, detail=f"URL 요청 실패: {str(e)}")
@@ -237,6 +162,40 @@ def parse_digitaltoday(url: str = Query(..., description="DigitalToday 뉴스 UR
         return {
             "status": "success",
             "message": "DigitalToday 뉴스 데이터 추출 완료",
+            "data": result_data
+        }
+
+    except requests.RequestException as e:
+        raise HTTPException(status_code=400, detail=f"URL 요청 실패: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파싱 오류: {str(e)}")
+
+
+@test_router.get("/parse-tokenpost", response_model=dict)
+def parse_tokenpost(url: str = Query(..., description="TokenPost 뉴스 URL")):
+    """
+    TokenPost 뉴스 메타데이터 추출 테스트
+
+    Args:
+        url: TokenPost 뉴스 URL
+
+    Returns:
+        추출된 뉴스 메타데이터 (제목, 기자, 날짜, 본문)
+    """
+    try:
+        # HTTP 요청
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        # TokenPost 파서 실행
+        result_data = parse_tokenpost_news(response.text, url)
+
+        return {
+            "status": "success",
+            "message": "TokenPost 뉴스 데이터 추출 완료",
             "data": result_data
         }
 
