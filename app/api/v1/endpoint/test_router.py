@@ -7,6 +7,8 @@ from app.services.naver_news_search_service import NaverNewsSearchService
 from app.parser.coinreaders_parser import parse_coinreaders_news
 from app.parser.digitaltoday_parser import parse_digitaltoday_news
 from app.parser.tokenpost_parser import parse_tokenpost_news
+from app.parser.general_parser import parse_general_news
+from app.parser.newsUrlLoader_parser import parse_news_with_urlloader
 
 test_router = APIRouter(prefix="/test", tags=["test"])
 
@@ -201,5 +203,63 @@ def parse_tokenpost(url: str = Query(..., description="TokenPost 뉴스 URL")):
 
     except requests.RequestException as e:
         raise HTTPException(status_code=400, detail=f"URL 요청 실패: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파싱 오류: {str(e)}")
+
+
+@test_router.get("/parse-general", response_model=dict)
+def parse_general(url: str = Query(..., description="일반 뉴스 URL")):
+    """
+    General 파서 - WebBaseLoader 사용하여 메타데이터 추출 테스트
+
+    Args:
+        url: 뉴스 URL
+
+    Returns:
+        추출된 뉴스 메타데이터 (제목, 본문, metadata 전체)
+    """
+    try:
+        # General 파서 실행 (WebBaseLoader 사용)
+        result_data = parse_general_news(url)
+
+        return {
+            "status": "success",
+            "message": "General 파서로 뉴스 데이터 추출 완료",
+            "data": result_data
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"파싱 오류: {str(e)}")
+
+
+@test_router.get("/parse-urlloader", response_model=dict)
+def parse_urlloader(url: str = Query(..., description="뉴스 URL")):
+    """
+    LangChain URL Loader 파서 - WebBaseLoader를 사용하여 고급 메타데이터 추출
+
+    Args:
+        url: 뉴스 URL
+
+    Returns:
+        추출된 뉴스 메타데이터 (제목, 기자, 날짜, 본문, 통계 정보, OG/Twitter 메타데이터 등)
+    """
+    try:
+        # NewsUrlLoader 파서 실행 (LangChain WebBaseLoader 사용)
+        result_data = parse_news_with_urlloader(url)
+
+        # 에러가 있는 경우 체크
+        if "error" in result_data and result_data.get("article_content") is None:
+            return {
+                "status": "error",
+                "message": result_data["error"],
+                "data": result_data
+            }
+
+        return {
+            "status": "success",
+            "message": "LangChain URL Loader로 뉴스 데이터 추출 완료",
+            "data": result_data
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"파싱 오류: {str(e)}")
