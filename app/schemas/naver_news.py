@@ -37,5 +37,11 @@ class NaverNewsAPIResponse(BaseModel):
     display: int
     items: List[NaverNewsItem]
 
-class NaverNewsFinalResult(BaseModel):
-    pass
+class NaverNewsMetadataAndRawContent(BaseModel):
+    lastBuildDate: str
+    title: str
+    originalLink: str
+    author: str
+    media: str
+    rawContent: str
+
