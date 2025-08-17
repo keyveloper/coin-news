@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-class CoinReaderMetadata(BaseModel):
+class GeneralMetadata(BaseModel):
     title: str
     link: str
     authors: str
@@ -8,6 +8,7 @@ class CoinReaderMetadata(BaseModel):
     description: str
     published_date: str
 
-class CoinReaderMetadatWithRaw(BaseModel):
+class GeneralMetadatWithRaw(BaseModel):
     page_content: str
-    metadata: CoinReaderMetadata
+    metadata: GeneralMetadata
+

@@ -3,10 +3,10 @@ from typing import Dict, Optional
 import re
 import requests
 from datetime import datetime
-from app.schemas.parser import CoinReaderMetadata, CoinReaderMetadatWithRaw
+from app.schemas.metadata import GeneralMetadata, GeneralMetadatWithRaw
 
 
-def parse_coinreaders_news(url: str) -> CoinReaderMetadatWithRaw:
+def parse_coinreaders_news(url: str) -> GeneralMetadatWithRaw:
     # URL에서 HTML 가져오기
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -62,7 +62,7 @@ def parse_coinreaders_news(url: str) -> CoinReaderMetadatWithRaw:
             # p 태그가 없으면 전체 텍스트 추출
             page_content = textinput_div.get_text(strip=True)
 
-    metadata = CoinReaderMetadata(
+    metadata = GeneralMetadata(
         title=title,
         link=url,
         authors=authors,
@@ -71,7 +71,7 @@ def parse_coinreaders_news(url: str) -> CoinReaderMetadatWithRaw:
         published_date=published_date
     )
 
-    return CoinReaderMetadatWithRaw(
+    return GeneralMetadatWithRaw(
         page_content=page_content,
         metadata=metadata
     )
