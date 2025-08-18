@@ -2,6 +2,7 @@ from bs4 import BeautifulSoup
 from typing import Dict, Optional
 import re
 import requests
+from datetime import datetime
 from app.schemas.parser import CoinReaderMetadata, CoinReaderMetadatWithRaw
 
 
@@ -39,10 +40,14 @@ def parse_coinreaders_news(url: str) -> CoinReaderMetadatWithRaw:
         # 날짜 추출 (텍스트에서 "기사입력  2025/11/10 [10:21]" 형식 찾기)
         text = writer_time_div.get_text()
         # 정규식으로 날짜 패턴 추출: YYYY/MM/DD [HH:MM]
-        date_pattern = r'기사입력\s+(\d{4}/\d{2}/\d{2}\s+\[\d{2}:\d{2}\])'
+        date_pattern = r'기사입력\s+(\d{4})/(\d{2})/(\d{2})\s+\[(\d{2}):(\d{2})\]'
         date_match = re.search(date_pattern, text)
         if date_match:
-            published_date = date_match.group(1).strip()
+            year, month, day, hour, minute = date_match.groups()
+            # datetime 객체 생성 (한국 시간대 +09:00)
+            dt = datetime(int(year), int(month), int(day), int(hour), int(minute))
+            # ISO 8601 형식으로 변환 (한국 시간대 포함)
+            published_date = dt.strftime("%Y-%m-%dT%H:%M:%S") + "+09:00"
 
     # 4. 본문 내용 (<div id="textinput">의 <p> 태그들)
     textinput_div = soup.find('div', id='textinput')

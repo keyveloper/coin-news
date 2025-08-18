@@ -86,8 +86,10 @@ class NaverNewsScratchService:
         # general_docs 저장
         for doc in general_docs:
             try:
-                doc_dict = doc.__dict__
-                news_log_collection.insert_one(doc_dict)
+                doc_dict = doc.__dict__.copy()
+                result = news_log_collection.insert_one(doc_dict)
+                # MongoDB _id를 문자열로 변환하여 저장
+                doc_dict['_id'] = str(result.inserted_id)
                 saved.append(doc_dict)
                 saved_count += 1
             except Exception as e:
@@ -98,7 +100,9 @@ class NaverNewsScratchService:
         for doc in coinreader_docs:
             try:
                 doc_dict = doc.model_dump() if hasattr(doc, 'model_dump') else doc.dict()
-                news_log_collection.insert_one(doc_dict)
+                result = news_log_collection.insert_one(doc_dict)
+                # MongoDB _id를 문자열로 변환하여 저장
+                doc_dict['_id'] = str(result.inserted_id)
                 saved.append(doc_dict)
                 saved_count += 1
             except Exception as e:
