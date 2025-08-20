@@ -85,3 +85,38 @@ class NaverNewsAPIClient:
         # JSON 응답 파싱
         data = response.json()
         return NaverNewsAPIResponse(**data)
+
+    def fetch_news_by_date(
+        self,
+        query: str,
+        start_date: str,
+        end_date: str,
+        display: int = 10,
+        start: int = 1,
+        sort: str = "date"
+    ) -> NaverNewsAPIResponse:
+        """날짜 범위로 뉴스 검색
+
+        Args:
+            query: 검색어
+            start_date: 시작 날짜 (YYYYMMDD 형식, 예: 20240101)
+            end_date: 종료 날짜 (YYYYMMDD 형식, 예: 20240131)
+            display: 검색 결과 출력 건수 (1~100)
+            start: 검색 시작 위치 (1~1000)
+            sort: 정렬 옵션 (sim: 정확도순, date: 날짜순)
+
+        Returns:
+            NaverNewsAPIResponse: API 응답 객체
+        """
+        # 날짜 범위를 쿼리에 추가
+        # 네이버 검색 API는 날짜 필터를 지원하지 않으므로 검색어에 날짜를 포함
+        date_query = f"{query} {start_date}..{end_date}"
+
+        logger.info(f"날짜 범위 검색: {date_query}")
+
+        return self.fetch_news(
+            query=date_query,
+            display=display,
+            start=start,
+            sort=sort
+        )

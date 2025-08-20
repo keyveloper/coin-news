@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "WebSearch",
+      "WebFetch(domain:developers.naver.com)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

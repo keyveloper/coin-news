@@ -1,8 +1,22 @@
 import requests
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, BackgroundTasks
 from bs4 import BeautifulSoup
 from app.schemas.test import MyCustomResponse, MyCustomRequest
 from app.services.naver_news_scratch_service import NaverNewsScratchService
+from langchain_community.document_loaders import NewsURLLoader
+from app.crawlers.tokenpost_page_crawler import TokenPostPageCrawler
+from app.parser.coinreaders_parser import parse_coinreaders_news
+from app.parser.tokenpost_parser import parse_tokenpost_news
+from datetime import datetime, timedelta
+from bs4 import BeautifulSoup
+import uuid
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+# In-memory task storage (for production, use Redis or DB)
+task_results = {}
 
 test_router = APIRouter(prefix="/test", tags=["test"])
 
@@ -75,3 +89,153 @@ def get_scratch(query: str):
     service = NaverNewsScratchService()
     docs = service.scratch_adn_save_to_mongodb(query)
     return docs
+
+@test_router.post("/batch")
+def get_docs_from_batch(
+    query: str = Query(..., description="include in title"),
+    pivot_date: str = Query(..., description="Reference date (YYYYMMDD format)"),
+    days_before: int = Query(30, description="Number of days before pivot_date")
+):
+    """
+    Simple batch test - Collect TokenPost news links within date range
+    """
+
+
+    # Parse pivot_date
+    try:
+        pivot_dt = datetime.strptime(pivot_date, "%Y%m%d")
+        # Set to end of day (23:59:59) to include all news from pivot_date
+        pivot_dt = pivot_dt.replace(hour=23, minute=59, second=59)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYYMMDD")
+
+    # Calculate cutoff date (start of day, days_before ago)
+    cutoff_dt = pivot_dt - timedelta(days=days_before)
+    cutoff_dt = cutoff_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    logger.info(f"Collecting news from {cutoff_dt} to {pivot_dt}")
+
+    collected_links = []
+    page = 1
+    base_url = "https://www.tokenpost.kr/news/cryptocurrency"
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+
+    while True:
+        try:
+            # Fetch page
+            url = f"{base_url}?page={page}"
+            logger.info(f"Fetching page {page}: {url}")
+
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+
+            # Parse HTML
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Find all articles
+            list_left_item = soup.find('div', class_='list_left_item')
+            if not list_left_item:
+                logger.warning(f"No list_left_item found on page {page}")
+                break
+
+            articles = list_left_item.find_all('div', class_='list_left_item_article')
+            if not articles:
+                logger.warning(f"No articles found on page {page}")
+                break
+
+            logger.info(f"Found {len(articles)} articles on page {page}")
+
+            found_in_range = 0
+            should_stop = False
+
+            for article in articles:
+                try:
+                    # Extract link from list_item_title
+                    title_div = article.find('div', class_='list_item_title')
+                    if not title_div:
+                        continue
+
+                    a_tag = title_div.find('a')
+                    if not a_tag or not a_tag.get('href'):
+                        continue
+
+                    # Get title text
+                    title_text = a_tag.get_text(strip=True)
+
+                    # Filter by query - skip if query not in title
+                    if query.lower() not in title_text.lower():
+                        continue
+
+                    link = a_tag.get('href')
+                    if link.startswith('/'):
+                        link = f"https://www.tokenpost.kr{link}"
+
+                    # Extract datetime from time tag in list_item_write
+                    write_div = article.find('div', class_='list_item_write')
+                    if not write_div:
+                        continue
+
+                    date_item = write_div.find('div', class_='date_item')
+                    if not date_item:
+                        continue
+
+                    time_tag = date_item.find('time', class_='day')
+                    if not time_tag or not time_tag.get('datetime'):
+                        continue
+
+                    datetime_str = time_tag.get('datetime')
+
+                    # Parse datetime (format: "2025.11.17 22:18")
+                    try:
+                        news_dt = datetime.strptime(datetime_str, "%Y.%m.%d %H:%M")
+                    except ValueError:
+                        logger.warning(f"Failed to parse datetime: {datetime_str}")
+                        continue
+
+                    # Check if news is older than cutoff
+                    if news_dt < cutoff_dt:
+                        logger.info(f"Found news older than cutoff: {datetime_str}")
+                        should_stop = True
+                        break
+
+                    # Check if news is within range
+                    if cutoff_dt <= news_dt <= pivot_dt:
+                        collected_links.append({
+                            "link": link,
+                            "datetime": datetime_str,
+                            "title": a_tag.get_text(strip=True)
+                        })
+                        found_in_range += 1
+
+                except Exception as e:
+                    logger.error(f"Error parsing article: {e}")
+                    continue
+
+            logger.info(f"Page {page}: Found {found_in_range} news within range")
+
+            # Stop if we found older news
+            if should_stop:
+                logger.info(f"Stopping at page {page} - reached cutoff date")
+                break
+
+
+
+            # Move to next page
+            page += 1
+
+        except Exception as e:
+            logger.error(f"Error on page {page}: {e}")
+            break
+
+    return {
+        "status": "success",
+        "pivot_date": pivot_date,
+        "days_before": days_before,
+        "cutoff_date": cutoff_dt.strftime("%Y.%m.%d"),
+        "total_pages_crawled": page,
+        "total_links_collected": len(collected_links),
+        "links": collected_links
+    }
