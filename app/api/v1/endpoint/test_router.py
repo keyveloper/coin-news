@@ -7,6 +7,7 @@ from langchain_community.document_loaders import NewsURLLoader
 from app.crawlers.tokenpost_page_crawler import TokenPostPageCrawler
 from app.parser.coinreaders_parser import parse_coinreaders_news
 from app.parser.tokenpost_parser import parse_tokenpost_news
+from app.config.mongodb_config import get_mongodb_client
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 import uuid
@@ -230,12 +231,110 @@ def get_docs_from_batch(
             logger.error(f"Error on page {page}: {e}")
             break
 
+    # Step 2: Extract metadata using NewsURLLoader
+    logger.info(f"Total {len(collected_links)} links collected. Starting metadata extraction...")
+
+    if not collected_links:
+        return {
+            "status": "success",
+            "message": "No links found matching criteria",
+            "pivot_date": pivot_date,
+            "days_before": days_before,
+            "cutoff_date": cutoff_dt.strftime("%Y.%m.%d"),
+            "total_pages_crawled": page,
+            "total_links_collected": 0,
+            "documents": []
+        }
+
+    # Extract only URLs from collected_links
+    urls = [item["link"] for item in collected_links]
+
+    # NewsURLLoader batch processing (max 20 URLs per batch to prevent timeout)
+    batch_size = 20
+    all_documents = []
+
+    for i in range(0, len(urls), batch_size):
+        batch_urls = urls[i:i+batch_size]
+        batch_num = (i // batch_size) + 1
+        total_batches = (len(urls) + batch_size - 1) // batch_size
+
+        logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch_urls)} URLs)...")
+
+        try:
+            loader = NewsURLLoader(urls=batch_urls)
+            docs = loader.load()
+
+            # Convert to dict format
+            for doc in docs:
+                all_documents.append({
+                    "page_content": doc.page_content,
+                    "metadata": doc.metadata
+                })
+
+            logger.info(f"Batch {batch_num}/{total_batches} completed: {len(docs)} documents loaded")
+
+        except Exception as e:
+            logger.error(f"Error loading batch {batch_num}: {e}")
+            # Continue with next batch even if one fails
+
+    logger.info(f"Metadata extraction completed. Total documents: {len(all_documents)}")
+
+    # Step 3: Save to MongoDB
+    logger.info("Saving documents to MongoDB...")
+
+    mongodb_client = get_mongodb_client()
+    local_db = mongodb_client.get_database("local")
+    news_log_collection = local_db.get_collection("news.log")
+
+    saved = []
+    saved_count = 0
+    failed_count = 0
+
+    for doc_data in all_documents:
+        try:
+            # Prepare document for MongoDB
+            doc_dict = {
+                "page_content": doc_data["page_content"],
+                "metadata": doc_data["metadata"],
+                "source": "tokenpost",
+                "query": query,
+                "collected_at": datetime.now().isoformat(),
+                "pivot_date": pivot_date
+            }
+
+            # Check if document already exists (by URL)
+            existing = news_log_collection.find_one({
+                "metadata.url": doc_data["metadata"].get("url")
+            })
+
+            if existing:
+                logger.info(f"Document already exists: {doc_data['metadata'].get('title', 'No title')[:50]}...")
+                continue
+
+            # Insert to MongoDB
+            result = news_log_collection.insert_one(doc_dict)
+            doc_dict['_id'] = str(result.inserted_id)
+            saved.append(doc_dict)
+            saved_count += 1
+            logger.info(f"Saved to MongoDB: {doc_data['metadata'].get('title', 'No title')[:50]}...")
+
+        except Exception as e:
+            logger.error(f"Failed to save document: {e}")
+            failed_count += 1
+
+    logger.info(f"MongoDB save completed - Success: {saved_count}, Failed: {failed_count}")
+
     return {
         "status": "success",
+        "message": f"Successfully collected {len(all_documents)} documents, saved {saved_count} to MongoDB",
         "pivot_date": pivot_date,
         "days_before": days_before,
         "cutoff_date": cutoff_dt.strftime("%Y.%m.%d"),
         "total_pages_crawled": page,
         "total_links_collected": len(collected_links),
-        "links": collected_links
+        "total_documents_loaded": len(all_documents),
+        "saved_to_mongodb": saved_count,
+        "failed_to_save": failed_count,
+        "already_exists": len(all_documents) - saved_count - failed_count,
+        "documents": all_documents
     }
