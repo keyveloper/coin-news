@@ -248,8 +248,9 @@ def get_docs_from_batch(
         # 4. MongoDB 저장
         # -------------------------------------------------
         mongodb_client = get_mongodb_client()
-        news_log_collection = mongodb_client.local.get_collection("news.log")
-        batch_log_collection = mongodb_client.local.get_collection("batch.log")  # ⭐ 로그 컬렉션
+        local_db = mongodb_client.get_database("local")
+        news_log_collection = local_db.get_collection("news.log")
+        batch_log_collection = local_db.get_collection("batch.log")
 
         saved = []
         saved_count = 0
