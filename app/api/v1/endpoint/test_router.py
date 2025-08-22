@@ -100,6 +100,7 @@ def get_docs_from_batch(
     """
 
     acquire_lock()  # 🔒 락 획득
+    start_time = datetime.now()  # ⭐ 배치 시작 시각 기록
 
     try:
         # -------------------------------------------------
@@ -248,6 +249,7 @@ def get_docs_from_batch(
         # -------------------------------------------------
         mongodb_client = get_mongodb_client()
         news_log_collection = mongodb_client.local.get_collection("news.log")
+        batch_log_collection = mongodb_client.local.get_collection("batch.log")  # ⭐ 로그 컬렉션
 
         saved = []
         saved_count = 0
@@ -277,6 +279,27 @@ def get_docs_from_batch(
 
         logger.info(f"MongoDB save completed - Success: {saved_count}, Failed: {failed_count}")
 
+        # -------------------------------------------------
+        # 5. ⭐ 실행 시간 로그 저장
+        # -------------------------------------------------
+        end_time = datetime.now()
+        duration_sec = (end_time - start_time).total_seconds()
+
+        batch_log = {
+            "batch_name": "tokenpost",
+            "started_at": start_time.isoformat(),
+            "ended_at": end_time.isoformat(),
+            "duration_sec": duration_sec,
+            "links_collected": len(collected_links),
+            "total_docs_loaded": len(all_documents),
+            "saved_count": saved_count,
+            "failed_count": failed_count
+        }
+
+        batch_log_collection.insert_one(batch_log)
+
+        logger.info(f"⭐ Batch execution time: {duration_sec}s logged successfully.")
+
         return {
             "status": "success",
             "message": f"Successfully collected {len(all_documents)} documents, saved {saved_count} to MongoDB",
@@ -288,8 +311,7 @@ def get_docs_from_batch(
             "total_documents_loaded": len(all_documents),
             "saved_to_mongodb": saved_count,
             "failed_to_save": failed_count,
-            "already_exists": len(all_documents) - saved_count - failed_count,
-            "documents": all_documents
+            "batch_time_sec": duration_sec  # ⭐ 응답에도 실행 시간 포함
         }
 
     finally:
