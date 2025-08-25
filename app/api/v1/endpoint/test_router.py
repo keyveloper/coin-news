@@ -288,6 +288,8 @@ def get_docs_from_batch(
 
         batch_log = {
             "batch_name": "tokenpost",
+            "pivot_date": pivot_date,
+            "days_before": days_before,
             "started_at": start_time.isoformat(),
             "ended_at": end_time.isoformat(),
             "duration_sec": duration_sec,
