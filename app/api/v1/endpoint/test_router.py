@@ -251,6 +251,7 @@ def get_docs_from_batch(
         local_db = mongodb_client.get_database("local")
         news_log_collection = local_db.get_collection("news.log")
         batch_log_collection = local_db.get_collection("batch.log")
+        pivot_log_collection = local_db.get_collection("pivot.log")
 
         saved = []
         saved_count = 0
@@ -281,7 +282,7 @@ def get_docs_from_batch(
         logger.info(f"MongoDB save completed - Success: {saved_count}, Failed: {failed_count}")
 
         # -------------------------------------------------
-        # 5. ⭐ 실행 시간 로그 저장
+        # 5. 실행 시간 로그 저장
         # -------------------------------------------------
         end_time = datetime.now()
         duration_sec = (end_time - start_time).total_seconds()
@@ -298,6 +299,15 @@ def get_docs_from_batch(
             "saved_count": saved_count,
             "failed_count": failed_count
         }
+
+        # -------------------------------------------------
+        # 6. 가장 최신 pivot 시간 기록
+        # -------------------------------------------------
+        pivot_log_collection.insert_one({
+            "batch_name": "tokenpost",
+            "pivot_date": pivot_date,
+            "created_at": datetime.now().isoformat()
+        })
 
         batch_log_collection.insert_one(batch_log)
 
@@ -319,3 +329,4 @@ def get_docs_from_batch(
 
     finally:
         release_lock()  # 🔓 무조건 락 해제
+
