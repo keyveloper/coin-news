@@ -1,9 +1,8 @@
 import logging
 import os
+import requests
 from datetime import datetime
-from typing import List, Dict, Any
 from uuid import uuid4
-
 from fastapi import APIRouter, Query, HTTPException
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
@@ -98,8 +97,7 @@ def embedding(
             raise HTTPException(status_code=500, detail="OPENAI_API_KEY not found in environment variables")
 
         embeddings_model = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            openai_api_key=openai_api_key
+            model="text-embedding-3-small"
         )
 
         # -------------------------------------------------
@@ -211,4 +209,113 @@ def embedding(
         raise
     except Exception as e:
         logger.error(f"Error in batch embedding endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@batch_route.post("/price")
+def fetch_and_save_price_data(
+    query: str = Query(..., description="Coin symbol (e.g., BTC, ETH)"),
+    time: str = Query(..., description="Date in YYYYMMDD format")
+):
+    try:
+        # -------------------------------------------------
+        # 1. Validate and convert date to epoch timestamp
+        # -------------------------------------------------
+        try:
+            target_date = datetime.strptime(time, "%Y%m%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYYMMDD")
+
+        # Convert to epoch timestamp (end of day)
+        target_date_end = target_date.replace(hour=23, minute=59, second=59)
+        epoch_timestamp = int(target_date_end.timestamp())
+
+        # Format date for storage (YYYY-MM-DD)
+        formatted_date = target_date.strftime("%Y-%m-%d")
+
+        logger.info(f"Fetching price data for {query} on {formatted_date} (epoch: {epoch_timestamp})")
+
+        # -------------------------------------------------
+        # 2. Get CryptoCompare API key from environment
+        # -------------------------------------------------
+        api_key = os.getenv("CRYPTO_COMPARE_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="CRYPTO_COMPARE_API_KEY not found in environment variables")
+
+        # -------------------------------------------------
+        # 3. Call CryptoCompare API
+        # -------------------------------------------------
+        api_url = "https://min-api.cryptocompare.com/data/v2/histohour"
+        params = {
+            "fsym": query.upper(),  # From symbol (coin)
+            "tsym": "USD",  # To symbol (fixed)
+            "toTs": epoch_timestamp,  # End timestamp
+            "limit": 24  # 24 hours of data
+        }
+        headers = {
+            "authorization": f"Apikey {api_key}"
+        }
+
+        logger.info(f"Calling CryptoCompare API: {api_url} with params {params}")
+        response = requests.get(api_url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        api_data = response.json()
+
+        # Check if API returned success
+        if api_data.get("Response") != "Success":
+            error_msg = api_data.get("Message", "Unknown error from CryptoCompare API")
+            raise HTTPException(status_code=400, detail=f"CryptoCompare API error: {error_msg}")
+
+        logger.info(f"Successfully fetched {len(api_data.get('Data', {}).get('Data', []))} price records")
+
+        # -------------------------------------------------
+        # 4. Save to MongoDB (price.log collection)
+        # -------------------------------------------------
+        mongodb_client = get_mongodb_client()
+        local_db = mongodb_client.get_database("local")
+        price_log_collection = local_db.get_collection("price.log")
+
+        # Prepare documents for MongoDB (each hourly data point as a separate document)
+        price_data_array = api_data.get("Data", {}).get("Data", [])
+        price_documents = [
+            {
+                "coin_name": query.upper(),
+                "date": formatted_date,
+                "price_data": data,
+                "created_at": datetime.now().isoformat()
+            }
+            for data in price_data_array
+        ]
+
+        # Insert multiple documents into MongoDB
+        if price_documents:
+            result = price_log_collection.insert_many(price_documents)
+            logger.info(f"Saved {len(result.inserted_ids)} price records to MongoDB")
+        else:
+            logger.warning("No price data to save")
+            result = None
+
+        # -------------------------------------------------
+        # 5. Return results
+        # -------------------------------------------------
+        return {
+            "status": "success",
+            "message": f"Successfully fetched and saved price data for {query}",
+            "coin_name": query.upper(),
+            "date": formatted_date,
+            "epoch_timestamp": epoch_timestamp,
+            "total_records": len(price_data_array),
+            "documents_inserted": len(result.inserted_ids) if result else 0,
+            "mongo_ids": [str(id) for id in result.inserted_ids[:5]] if result else [],  # First 5 IDs
+            "data_preview": price_data_array[:3]  # First 3 records as preview
+        }
+
+    except HTTPException:
+        raise
+    except requests.RequestException as e:
+        logger.error(f"API request error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch data from CryptoCompare API: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error in price data endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
