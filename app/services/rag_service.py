@@ -101,19 +101,19 @@ class RAGService:
             logger.error(f"Error parsing query with LLM: {e}")
             raise
 
-    def _search_chromadb(self, query: str, date: str, top_k: int = 5) -> List[Dict]:
+    def _search_chromadb(self, query: str, date_epoch: int, top_k: int = 5) -> List[Dict]:
         """
         Search ChromaDB for relevant news chunks
 
         Args:
             query: Search query (will be embedded)
-            date: Target date (YYYY-MM-DD format)
+            date_epoch: Target date as epoch timestamp
             top_k: Number of results to return
 
         Returns:
             List of relevant news chunks with metadata
         """
-        logger.info(f"Searching ChromaDB for query='{query}', date={date}, top_k={top_k}")
+        logger.info(f"Searching ChromaDB for query='{query}', date_epoch={date_epoch}, top_k={top_k}")
 
         try:
             # Get ChromaDB collection
@@ -123,13 +123,22 @@ class RAGService:
             # Generate embedding for query
             query_embedding = self.embeddings_model.embed_query(query)
 
-            # Search with date filter
-            # Note: ChromaDB metadata values are strings
-            # ChromaDB supports: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin
+            # Calculate date range (start and end of day)
+            # Assume date_epoch is start of day, add 86400 seconds (24 hours) for end of day
+            start_epoch = date_epoch
+            end_epoch = date_epoch + 86399  # 23:59:59 of the same day
+
+            # Search with date filter using epoch timestamps
+            # ChromaDB supports numeric comparisons with $gte, $lte
             results = collection.query(
                 query_embeddings=[query_embedding],
                 n_results=top_k,
-                where={"publish_date": {"$gte": f"{date} 00:00:00", "$lte": f"{date} 23:59:59"}}
+                where={
+                    "$and": [
+                        {"publish_date": {"$gte": start_epoch}},
+                        {"publish_date": {"$lte": end_epoch}}
+                    ]
+                }
             )
 
             # Format results
@@ -143,7 +152,7 @@ class RAGService:
                     }
                     chunks.append(chunk_data)
 
-            logger.info(f"Found {len(chunks)} relevant chunks from ChromaDB")
+            logger.info(f"Found {len(chunks)} relevant chunks from ChromaDB for epoch {date_epoch}")
             return chunks
 
         except Exception as e:
@@ -356,35 +365,43 @@ class RAGService:
             # Step 1: Parse query
             parsed_data = self._parse_query_with_llm(query)
             token = parsed_data.get("token", "BTC")
-            center_date = parsed_data.get("date", datetime.now().strftime("%Y-%m-%d"))
+            center_date_epoch = parsed_data.get("date_epoch", int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()))
             original_query = parsed_data.get("original_query", query)
 
-            # Step 2: Generate date range (7 days before and after)
-            center_datetime = datetime.strptime(center_date, "%Y-%m-%d")
-            date_range = []
-            for days_offset in range(-7, 8):  # -7 to +7 (15 days total)
-                target_date = center_datetime + timedelta(days=days_offset)
-                date_range.append(target_date.strftime("%Y-%m-%d"))
+            # Convert epoch to datetime for logging and price data
+            center_datetime = datetime.fromtimestamp(center_date_epoch)
+            center_date_str = center_datetime.strftime("%Y-%m-%d")
 
-            logger.info(f"Searching news for date range: {date_range[0]} to {date_range[-1]}")
+            # Step 2: Generate date range (7 days before and after) in epoch time
+            epoch_range = []
+            for days_offset in range(-7, 8):  # -7 to +7 (15 days total)
+                target_datetime = center_datetime + timedelta(days=days_offset)
+                # Set to start of day (00:00:00)
+                target_epoch = int(target_datetime.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+                epoch_range.append(target_epoch)
+
+            start_date_str = datetime.fromtimestamp(epoch_range[0]).strftime("%Y-%m-%d")
+            end_date_str = datetime.fromtimestamp(epoch_range[-1]).strftime("%Y-%m-%d")
+            logger.info(f"Searching news for date range: {start_date_str} to {end_date_str}")
 
             # Step 3: Search ChromaDB for each date (top_k=10 per date)
             all_news_chunks = []
-            for date in date_range:
+            for date_epoch in epoch_range:
                 chunks = self._search_chromadb(
                     query=original_query,
-                    date=date,
+                    date_epoch=date_epoch,
                     top_k=10
                 )
                 all_news_chunks.extend(chunks)
-                logger.info(f"Found {len(chunks)} chunks for date {date}")
+                date_str = datetime.fromtimestamp(date_epoch).strftime("%Y-%m-%d")
+                logger.info(f"Found {len(chunks)} chunks for date {date_str} (epoch: {date_epoch})")
 
             logger.info(f"Total news chunks collected: {len(all_news_chunks)}")
 
             # Step 4: Fetch price data
             price_data = self._fetch_price_data(
                 token=token,
-                date=center_date,
+                date=center_date_str,
                 days_range=7
             )
 
@@ -401,16 +418,19 @@ class RAGService:
                 "query": {
                     "original": query,
                     "parsed_token": token,
-                    "parsed_date": center_date,
+                    "parsed_date_epoch": center_date_epoch,
+                    "parsed_date": center_date_str,
                     "date_range": {
-                        "start": date_range[0],
-                        "end": date_range[-1]
+                        "start": start_date_str,
+                        "end": end_date_str,
+                        "start_epoch": epoch_range[0],
+                        "end_epoch": epoch_range[-1]
                     }
                 },
                 "data": {
                     "news_chunks_found": len(all_news_chunks),
                     "price_records_found": len(price_data),
-                    "dates_searched": len(date_range)
+                    "dates_searched": len(epoch_range)
                 },
                 "prompts": {
                     "system_prompt": self.analysis_prompt,

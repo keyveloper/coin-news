@@ -162,14 +162,34 @@ def embedding(
         # ChromaDB requires metadata values to be strings, ints, floats, or bools
         for item in chunk_metadata_list:
             meta = item["metadata"]
-            # Convert all metadata values to strings for ChromaDB compatibility
+
+            # Convert publish_date to epoch timestamp
+            publish_date_epoch = 0
+            publish_date = meta.get("publish_date")
+            if publish_date:
+                try:
+                    if isinstance(publish_date, datetime):
+                        publish_date_epoch = int(publish_date.timestamp())
+                    elif isinstance(publish_date, str):
+                        # Try to parse string date
+                        for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d"]:
+                            try:
+                                dt = datetime.strptime(publish_date, fmt)
+                                publish_date_epoch = int(dt.timestamp())
+                                break
+                            except ValueError:
+                                continue
+                except Exception as e:
+                    logger.warning(f"Could not convert publish_date to epoch: {e}")
+
+            # Convert all metadata values for ChromaDB compatibility
             chroma_metadata = {
                 "title": str(meta.get("title", "")),
                 "link": str(meta.get("link", "")),
                 "source": str(meta.get("source", "")),
                 "language": str(meta.get("language", "")),
                 "description": str(meta.get("description", "")),
-                "publish_date": str(meta.get("publish_date", "")),
+                "publish_date": publish_date_epoch,  # Store as epoch timestamp (int)
                 "collected_at": str(meta.get("collected_at", "")),
                 "pivot_date": str(meta.get("pivot_date", "")),
                 "chunk_index": meta.get("chunk_index", 0),
@@ -319,3 +339,98 @@ def fetch_and_save_price_data(
     except Exception as e:
         logger.error(f"Error in price data endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@batch_route.post("/migrate-chromadb-dates")
+def migrate_chromadb_dates():
+    """
+    Migrate ChromaDB publish_date from string to epoch timestamp
+
+    Adds 'publish_date_epoch' field to all documents in ChromaDB
+    """
+    try:
+        logger.info("Starting ChromaDB date migration...")
+
+        # Get ChromaDB client and collection
+        chroma_client = get_chroma_client()
+        collection = chroma_client.get_or_create_collection("coin_news")
+
+        # Get all documents
+        logger.info("Fetching all documents from ChromaDB...")
+        results = collection.get(include=["metadatas", "documents", "embeddings"])
+
+        total_docs = len(results['ids'])
+        logger.info(f"Found {total_docs} documents to migrate")
+
+        if total_docs == 0:
+            return {
+                "status": "success",
+                "message": "No documents found in collection",
+                "total_migrated": 0
+            }
+
+        # Prepare updated metadata
+        updated_metadatas = []
+        successful_conversions = 0
+        failed_conversions = 0
+
+        for i, metadata in enumerate(results['metadatas']):
+            publish_date_str = metadata.get('publish_date', '')
+
+            # Convert to epoch timestamp
+            try:
+                # Try multiple date formats
+                epoch_time = None
+                for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d"]:
+                    try:
+                        dt = datetime.strptime(publish_date_str, fmt)
+                        epoch_time = int(dt.timestamp())
+                        successful_conversions += 1
+                        break
+                    except ValueError:
+                        continue
+
+                if epoch_time is None:
+                    logger.warning(f"Could not parse date: {publish_date_str}")
+                    epoch_time = 0
+                    failed_conversions += 1
+
+            except Exception as e:
+                logger.error(f"Error converting date {publish_date_str}: {e}")
+                epoch_time = 0
+                failed_conversions += 1
+
+            # Replace publish_date with epoch timestamp
+            updated_metadata = {**metadata, 'publish_date': epoch_time}
+            updated_metadatas.append(updated_metadata)
+
+            if (i + 1) % 100 == 0:
+                logger.info(f"Processed {i + 1}/{total_docs} documents")
+
+        # Update all documents with new metadata
+        logger.info("Updating ChromaDB with epoch timestamps...")
+        collection.update(
+            ids=results['ids'],
+            metadatas=updated_metadatas
+        )
+
+        logger.info(f"Successfully migrated {total_docs} documents!")
+
+        # Verify migration
+        sample = collection.get(limit=1, include=["metadatas"])
+        sample_metadata = sample['metadatas'][0] if sample['metadatas'] else None
+
+        return {
+            "status": "success",
+            "message": f"Successfully migrated {total_docs} documents",
+            "total_migrated": total_docs,
+            "successful_conversions": successful_conversions,
+            "failed_conversions": failed_conversions,
+            "sample_metadata": sample_metadata
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Migration failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
