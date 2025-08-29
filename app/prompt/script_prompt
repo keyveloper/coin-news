@@ -3,7 +3,8 @@
 1. using semantic_search_result, write reason why a bitcoin price is at [CURRENT_PRICE]
 
 
+[CONSTRAINT]
+
 [SEMANTIC_SEARCH_RESULT]
 
-
-[CONSTRAINT]
+[PRICE]

@@ -19,7 +19,7 @@ batch_route = APIRouter(prefix="/batch", tags=["batch"])
 def embedding(
     query: str = Query(..., description="Search query to filter by title"),
     date: str = Query(..., description="Date to filter (YYYYMMDD format)"),
-    row_size: int = Query(100, description="Maximum number of documents to process", ge=1, le=1000)
+    row_size: int = Query(20, description="Maximum number of documents to process", ge=1, le=1000)
 ):
     try:
         # -------------------------------------------------
@@ -179,15 +179,15 @@ def embedding(
             }
             metadatas.append(chroma_metadata)
 
-        # Add to ChromaDB
-        collection.add(
+        # Add to ChromaDB (use upsert to handle duplicates)
+        collection.upsert(
             ids=ids,
             embeddings=embeddings,
             documents=documents_to_store,
             metadatas=metadatas
         )
 
-        logger.info(f"Successfully stored {len(ids)} vectors in ChromaDB")
+        logger.info(f"Successfully stored {len(ids)} vectors in ChromaDB (upsert mode)")
 
         # -------------------------------------------------
         # 10. Return results

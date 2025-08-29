@@ -1,0 +1,9 @@
+User Query: {query}
+
+[SEMANTIC_SEARCH_RESULT]
+{chunks}
+
+[PRICE]
+{price_data}
+
+Please analyze the above information and provide insights based on the news articles and price movements.
