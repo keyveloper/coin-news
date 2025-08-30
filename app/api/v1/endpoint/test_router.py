@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query, HTTPException
 from langchain_community.document_loaders import NewsURLLoader
 
 from app.config.mongodb_config import get_mongodb_client
+from app.config.chroma_config import get_chroma_client
 from app.schemas.test import MyCustomResponse, MyCustomRequest
 from app.services.naver_news_scratch_service import NaverNewsScratchService
 from app.tmp.batch_lock import acquire_lock, release_lock
@@ -330,3 +331,222 @@ def get_docs_from_batch(
     finally:
         release_lock()  # 🔓 무조건 락 해제
 
+
+@test_router.get("/chromadb/all", response_model=dict)
+def get_all_chromadb_data(
+    limit: int = Query(100, description="Maximum number of documents to retrieve"),
+    offset: int = Query(0, description="Number of documents to skip")
+):
+    """
+    ChromaDB에 저장된 전체 데이터 조회
+
+    Args:
+        limit: 조회할 최대 문서 개수 (기본값: 100)
+        offset: 건너뛸 문서 개수 (기본값: 0)
+
+    Returns:
+        ChromaDB에 저장된 문서들과 메타데이터
+    """
+    try:
+        # Get ChromaDB client and collection
+        chroma_client = get_chroma_client()
+        collection = chroma_client.get_or_create_collection("coin_news")
+
+        # Get total count
+        total_count = collection.count()
+
+        # Get all data with limit and offset (without embeddings)
+        results = collection.get(
+            limit=limit,
+            offset=offset,
+            include=["documents", "metadatas"]
+        )
+
+        # Format results for better readability
+        documents = []
+        if results and results.get('documents'):
+            for i in range(len(results['documents'])):
+                doc_data = {
+                    "id": results['ids'][i] if results.get('ids') else None,
+                    "content": results['documents'][i],
+                    "metadata": results['metadatas'][i] if results.get('metadatas') else {}
+                }
+
+                # Convert epoch to readable date if available
+                if doc_data['metadata'].get('publish_date'):
+                    try:
+                        epoch_time = doc_data['metadata']['publish_date']
+                        readable_date = datetime.fromtimestamp(epoch_time).strftime("%Y-%m-%d %H:%M:%S")
+                        doc_data['metadata']['publish_date_readable'] = readable_date
+                    except:
+                        pass
+
+                documents.append(doc_data)
+
+        return {
+            "status": "success",
+            "message": f"ChromaDB 데이터 조회 완료",
+            "total_count": total_count,
+            "returned_count": len(documents),
+            "offset": offset,
+            "limit": limit,
+            "has_more": (offset + len(documents)) < total_count,
+            "data": documents
+        }
+
+    except Exception as e:
+        logger.error(f"Error retrieving ChromaDB data: {e}")
+        raise HTTPException(status_code=500, detail=f"ChromaDB 조회 오류: {str(e)}")
+
+
+@test_router.get("/chromadb/stats", response_model=dict)
+def get_chromadb_stats():
+    """
+    ChromaDB 통계 정보 조회
+
+    Returns:
+        ChromaDB 컬렉션의 통계 정보
+    """
+    try:
+        # Get ChromaDB client and collection
+        chroma_client = get_chroma_client()
+        collection = chroma_client.get_or_create_collection("coin_news")
+
+        # Get basic stats
+        total_count = collection.count()
+
+        # Get sample data to analyze metadata structure
+        sample = collection.get(limit=10, include=["metadatas"])
+
+        # Analyze metadata fields
+        metadata_fields = set()
+        date_range = {"min": None, "max": None}
+
+        if sample and sample.get('metadatas'):
+            for metadata in sample['metadatas']:
+                metadata_fields.update(metadata.keys())
+
+                # Track date range
+                if metadata.get('publish_date'):
+                    try:
+                        epoch = metadata['publish_date']
+                        if date_range["min"] is None or epoch < date_range["min"]:
+                            date_range["min"] = epoch
+                        if date_range["max"] is None or epoch > date_range["max"]:
+                            date_range["max"] = epoch
+                    except:
+                        pass
+
+        # Convert epoch to readable dates
+        if date_range["min"]:
+            date_range["min_readable"] = datetime.fromtimestamp(date_range["min"]).strftime("%Y-%m-%d %H:%M:%S")
+        if date_range["max"]:
+            date_range["max_readable"] = datetime.fromtimestamp(date_range["max"]).strftime("%Y-%m-%d %H:%M:%S")
+
+        return {
+            "status": "success",
+            "collection_name": "coin_news",
+            "total_documents": total_count,
+            "metadata_fields": list(metadata_fields),
+            "date_range": date_range
+        }
+
+    except Exception as e:
+        logger.error(f"Error retrieving ChromaDB stats: {e}")
+        raise HTTPException(status_code=500, detail=f"ChromaDB 통계 조회 오류: {str(e)}")
+
+
+@test_router.get("/chromadb/by-epoch", response_model=dict)
+def get_chromadb_by_epoch(
+    date_epoch: int = Query(..., description="Target date as epoch timestamp (start of day, 00:00:00)"),
+    top_k: int = Query(10, description="Number of results to return (default: 10)")
+):
+    """
+    ChromaDB에서 특정 epoch time의 chunks 조회
+
+    Args:
+        date_epoch: 조회할 날짜의 epoch timestamp (하루의 시작 시간, 00:00:00)
+        top_k: 반환할 결과 개수 (기본값: 10)
+
+    Returns:
+        해당 날짜의 뉴스 chunks
+
+    Example:
+        GET /test/chromadb/by-epoch?date_epoch=1763218800&top_k=10
+        (2025-11-16 00:00:00)
+    """
+    try:
+        from langchain_openai import OpenAIEmbeddings
+
+        # Get ChromaDB client and collection
+        chroma_client = get_chroma_client()
+        collection = chroma_client.get_or_create_collection("coin_news")
+
+        # Calculate date range (start and end of day)
+        start_epoch = date_epoch
+        end_epoch = date_epoch + 86399  # 23:59:59 of the same day
+
+        # Convert to readable date
+        date_readable = datetime.fromtimestamp(date_epoch).strftime("%Y-%m-%d %H:%M:%S")
+        end_readable = datetime.fromtimestamp(end_epoch).strftime("%Y-%m-%d %H:%M:%S")
+
+        logger.info(f"Searching ChromaDB for date_epoch={date_epoch} ({date_readable} to {end_readable})")
+
+        # Create a dummy embedding for query (we just want to filter by date)
+        embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
+        dummy_query = "bitcoin news"
+        query_embedding = embeddings_model.embed_query(dummy_query)
+
+        # Search with date filter using publish_date_epoch
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=top_k,
+            where={
+                "$and": [
+                    {"publish_date_epoch": {"$gte": start_epoch}},
+                    {"publish_date_epoch": {"$lte": end_epoch}}
+                ]
+            }
+        )
+
+        # Format results
+        chunks = []
+        if results and results['documents'] and len(results['documents']) > 0:
+            for i, doc in enumerate(results['documents'][0]):
+                metadata = results['metadatas'][0][i] if results['metadatas'] else {}
+
+                # Add readable date to metadata
+                if metadata.get('publish_date_epoch'):
+                    try:
+                        metadata['publish_date_readable'] = datetime.fromtimestamp(
+                            metadata['publish_date_epoch']
+                        ).strftime("%Y-%m-%d %H:%M:%S")
+                    except:
+                        pass
+
+                chunk_data = {
+                    "id": results['ids'][0][i] if results.get('ids') else None,
+                    "content": doc,
+                    "metadata": metadata,
+                    "distance": results['distances'][0][i] if results['distances'] else None
+                }
+                chunks.append(chunk_data)
+
+        return {
+            "status": "success",
+            "message": f"Found {len(chunks)} chunks for epoch {date_epoch}",
+            "query_info": {
+                "date_epoch": date_epoch,
+                "date_readable": date_readable,
+                "start_epoch": start_epoch,
+                "end_epoch": end_epoch,
+                "end_readable": end_readable,
+                "top_k": top_k
+            },
+            "total_found": len(chunks),
+            "data": chunks
+        }
+
+    except Exception as e:
+        logger.error(f"Error searching ChromaDB by epoch: {e}")
+        raise HTTPException(status_code=500, detail=f"ChromaDB epoch 조회 오류: {str(e)}")

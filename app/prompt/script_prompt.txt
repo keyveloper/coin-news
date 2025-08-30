@@ -1,4 +1,4 @@
-User Query: {query}
+ User Query: {query}
 
 [SEMANTIC_SEARCH_RESULT]
 {chunks}

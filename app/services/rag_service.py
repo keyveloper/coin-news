@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List
 
+import tiktoken
 from langchain_openai import OpenAIEmbeddings
 from openai import OpenAI
 from openai.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
@@ -58,7 +59,7 @@ class RAGService:
 
     def _parse_query_with_llm(self, query: str) -> Dict:
         """
-        Parse user query to extract token information and time data using GPT-4o-mini
+        Parse user query to extract token information and time data using GPT-4o
 
         Args:
             query: User's natural language query
@@ -69,7 +70,7 @@ class RAGService:
                 - date: Date in YYYY-MM-DD format
                 - original_query: Original query for semantic search
         """
-        logger.info("Parsing query with GPT-4o-mini...")
+        logger.info("Parsing query with GPT-4o...")
 
         user_prompt = f"Parse this query: {query}\n\nToday's date is: {datetime.now().strftime('%Y-%m-%d')}"
 
@@ -86,7 +87,7 @@ class RAGService:
             json_format: ResponseFormatJSONObject = {"type": "json_object"}
 
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=[system_message, user_message],
                 response_format=json_format,
                 temperature=0
@@ -130,13 +131,14 @@ class RAGService:
 
             # Search with date filter using epoch timestamps
             # ChromaDB supports numeric comparisons with $gte, $lte
+            # Use publish_date_epoch field which contains the numeric epoch timestamp
             results = collection.query(
                 query_embeddings=[query_embedding],
                 n_results=top_k,
                 where={
                     "$and": [
-                        {"publish_date": {"$gte": start_epoch}},
-                        {"publish_date": {"$lte": end_epoch}}
+                        {"publish_date_epoch": {"$gte": start_epoch}},
+                        {"publish_date_epoch": {"$lte": end_epoch}}
                     ]
                 }
             )
@@ -210,12 +212,32 @@ class RAGService:
             logger.error(f"Error fetching price data: {e}")
             raise
 
+    def _count_tokens(self, text: str, model: str = "gpt-4o") -> int:
+        """
+        Count tokens in text using tiktoken
+
+        Args:
+            text: Text to count tokens for
+            model: Model name to use for encoding (default: gpt-4o)
+
+        Returns:
+            Number of tokens in the text
+        """
+        try:
+            encoding = tiktoken.encoding_for_model(model)
+            tokens = encoding.encode(text)
+            return len(tokens)
+        except Exception as e:
+            logger.warning(f"Error counting tokens with tiktoken: {e}. Using estimate.")
+            # Fallback: rough estimate (1 token ≈ 4 characters for English, less for other languages)
+            return len(text) // 3
+
     def _generate_final_analysis(
         self,
         original_query: str,
         news_chunks: List[Dict],
         price_data: List[Dict]
-    ) -> tuple[Dict, str]:
+    ) -> tuple[Dict, str, Dict]:
         """
         Generate final analysis using GPT-4o
 
@@ -225,7 +247,7 @@ class RAGService:
             price_data: Price data from MongoDB
 
         Returns:
-            Tuple of (Analysis result as JSON, Final user prompt string)
+            Tuple of (Analysis result as JSON, Final user prompt string, Token usage info)
         """
         logger.info("Generating final analysis with GPT-4o...")
 
@@ -248,6 +270,16 @@ class RAGService:
             price_data=price_content
         )
 
+        # Count tokens BEFORE sending to API
+        system_prompt_tokens = self._count_tokens(self.analysis_prompt)
+        user_prompt_tokens = self._count_tokens(user_prompt)
+        total_input_tokens_estimated = system_prompt_tokens + user_prompt_tokens
+
+        logger.info(f"📊 Token count (estimated via tiktoken):")
+        logger.info(f"  - System prompt: {system_prompt_tokens:,} tokens")
+        logger.info(f"  - User prompt: {user_prompt_tokens:,} tokens")
+        logger.info(f"  - Total input: {total_input_tokens_estimated:,} tokens")
+
         try:
             system_message: ChatCompletionSystemMessageParam = {
                 "role": "system",
@@ -267,10 +299,45 @@ class RAGService:
                 temperature=0.3
             )
 
+            # Get actual token usage from API response
+            actual_prompt_tokens = response.usage.prompt_tokens
+            actual_completion_tokens = response.usage.completion_tokens
+            actual_total_tokens = response.usage.total_tokens
+
+            logger.info(f"📊 Token count (actual from API):")
+            logger.info(f"  - Input tokens: {actual_prompt_tokens:,}")
+            logger.info(f"  - Output tokens: {actual_completion_tokens:,}")
+            logger.info(f"  - Total tokens: {actual_total_tokens:,}")
+
+            # Calculate cost (gpt-4o pricing)
+            input_cost = (actual_prompt_tokens / 1_000_000) * 2.50  # $2.50 per 1M input tokens
+            output_cost = (actual_completion_tokens / 1_000_000) * 10.00  # $10.00 per 1M output tokens
+            total_cost = input_cost + output_cost
+
+            logger.info(f"💰 Estimated cost: ${total_cost:.4f}")
+
+            token_usage = {
+                "estimated": {
+                    "system_prompt_tokens": system_prompt_tokens,
+                    "user_prompt_tokens": user_prompt_tokens,
+                    "total_input_tokens": total_input_tokens_estimated
+                },
+                "actual": {
+                    "prompt_tokens": actual_prompt_tokens,
+                    "completion_tokens": actual_completion_tokens,
+                    "total_tokens": actual_total_tokens
+                },
+                "cost": {
+                    "input_cost_usd": round(input_cost, 6),
+                    "output_cost_usd": round(output_cost, 6),
+                    "total_cost_usd": round(total_cost, 6)
+                }
+            }
+
             analysis = json.loads(response.choices[0].message.content)
             logger.info("Final analysis generated successfully")
 
-            return analysis, user_prompt
+            return analysis, user_prompt, token_usage
 
         except Exception as e:
             logger.error(f"Error generating final analysis: {e}")
@@ -347,7 +414,7 @@ class RAGService:
         Main method to process user query and generate analysis
 
         Process:
-        1. Parse query with GPT-4o-mini to extract token and date
+        1. Parse query with GPT-4o to extract token and date
         2. Generate date range (7 days before and after)
         3. Search ChromaDB for each date (top_k=10 per date)
         4. Fetch price data from MongoDB
@@ -374,7 +441,7 @@ class RAGService:
 
             # Step 2: Generate date range (7 days before and after) in epoch time
             epoch_range = []
-            for days_offset in range(-7, 8):  # -7 to +7 (15 days total)
+            for days_offset in range(-7, 2):  # -7 to +7 (15 days total)
                 target_datetime = center_datetime + timedelta(days=days_offset)
                 # Set to start of day (00:00:00)
                 target_epoch = int(target_datetime.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
@@ -390,7 +457,7 @@ class RAGService:
                 chunks = self._search_chromadb(
                     query=original_query,
                     date_epoch=date_epoch,
-                    top_k=10
+                    top_k=2
                 )
                 all_news_chunks.extend(chunks)
                 date_str = datetime.fromtimestamp(date_epoch).strftime("%Y-%m-%d")
@@ -406,7 +473,7 @@ class RAGService:
             )
 
             # Step 5: Generate final analysis
-            analysis, final_user_prompt = self._generate_final_analysis(
+            analysis, final_user_prompt, token_usage = self._generate_final_analysis(
                 original_query=original_query,
                 news_chunks=all_news_chunks,
                 price_data=price_data
@@ -432,6 +499,7 @@ class RAGService:
                     "price_records_found": len(price_data),
                     "dates_searched": len(epoch_range)
                 },
+                "token_usage": token_usage,
                 "prompts": {
                     "system_prompt": self.analysis_prompt,
                     "final_user_prompt": final_user_prompt
