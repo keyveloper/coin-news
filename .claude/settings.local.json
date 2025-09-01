@@ -3,7 +3,10 @@
     "allow": [
       "Bash(cat:*)",
       "WebSearch",
-      "WebFetch(domain:developers.naver.com)"
+      "WebFetch(domain:developers.naver.com)",
+      "Bash(pip show:*)",
+      "Bash(pip install:*)",
+      "Bash(python test_query_analyzer.py:*)"
     ],
     "deny": [],
     "ask": []

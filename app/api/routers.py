@@ -6,6 +6,7 @@ from app.api.v1.endpoint.bloomingbit_router import bloomingbit_router
 from app.api.v1.endpoint.naver_news_router import naver_news_router
 from app.api.v1.endpoint.batch_router import batch_route
 from app.api.v1.endpoint.bot_router import bot_route
+from app.api.v1.endpoint.query_router import query_router
 
 # API v1 라우터
 api_router = APIRouter(prefix="/api/v1")
@@ -17,3 +18,4 @@ api_router.include_router(bloomingbit_router)
 api_router.include_router(naver_news_router)
 api_router.include_router(batch_route)
 api_router.include_router(bot_route)
+api_router.include_router(query_router)
