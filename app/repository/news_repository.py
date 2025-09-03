@@ -3,7 +3,7 @@ ChromaDB 데이터베이스 작업 유틸리티
 """
 from typing import List, Dict, Optional
 from datetime import datetime
-from app.config.chroma_config import get_chroma_client, COLLECTION_NAME
+from app.config.chroma_config import get_chroma_client
 
 
 class NewsRepository:

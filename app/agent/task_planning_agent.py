@@ -46,19 +46,6 @@ class TaskPlanningAgent:
 
 
     def make_plan(self, query_json: Dict) -> Dict:
-        """
-        Dict = {
-            "date"
-            "coin_name"
-            "intent"
-            "event"
-        }
-        :param query_json:
-        :return:
-        """
-
-
-        return result
 
 
 def get_task_planning_agent() -> TaskPlanningAgent:

@@ -14,7 +14,7 @@ you should extract below key and value only.
 
   "event": {
     "magnitude": "big | small | any | null",
-    "keywords": find in query
+    "keywords": [ find in query ]
   },
 
   "goal": {
