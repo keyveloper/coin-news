@@ -6,25 +6,26 @@ from datetime import datetime
 from app.config.chroma_config import get_chroma_client, COLLECTION_NAME
 
 
-class ChromaNewsDB:
-    """코인 뉴스 ChromaDB 작업 클래스"""
+class NewsRepository:
+    _instance: Optional["NewsRepository"] = None
 
-    def __init__(self, collection_name: str = COLLECTION_NAME):
-        """
-        Args:
-            collection_name: 사용할 컬렉션 이름
-        """
-        self.client = get_chroma_client()
-        self.collection = self.client.get_or_create_collection(collection_name)
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        if not hasattr(self, '_initialized'):
+            self._initialized = True
+            self._collection_name = "coin_news"
+
+            # 내부 필드 변수 생성
+            self.client = get_chroma_client()
+            self.collection = self.client.get_client().get_or_create_collection(
+                name=self._collection_name,
+            )
 
     def add_news(self, news_items: List[Dict[str, str]]) -> int:
-        """
-        뉴스 데이터를 ChromaDB에 추가
-        Args:
-            news_items: [{'title': str, 'url': str}, ...] 형식의 뉴스 리스트
-        Returns:
-            추가된 뉴스 개수
-        """
         if not news_items:
             print("추가할 뉴스가 없습니다.")
             return 0
@@ -65,45 +66,45 @@ class ChromaNewsDB:
             print(f"❌ 뉴스 추가 실패: {e}")
             return 0
 
-    def search_news(self, query: str, n_results: int = 5) -> List[Dict]:
-        """
-        제목 기반 유사 뉴스 검색
-        Args:
-            query: 검색 쿼리
-            n_results: 반환할 결과 개수
-        Returns:
-            검색 결과 리스트
-        """
+    def find_news_by_semantic_query(
+        self,
+        query_embedding: List[float],
+        tok_k: int,
+        similarity_threshold: float,
+    ) -> List[Dict]:
         try:
+            # ChromaDB의 query 메서드로 벡터 검색
             results = self.collection.query(
-                query_texts=[query],
-                n_results=n_results
+                query_embeddings=[query_embedding],
+                n_results=tok_k,
             )
 
-            # 결과 포맷팅
+            # 결과 포맷팅 및 필터링
             search_results = []
             if results['metadatas'] and results['metadatas'][0]:
                 for idx, metadata in enumerate(results['metadatas'][0]):
-                    search_results.append({
-                        'title': metadata.get('title'),
-                        'url': metadata.get('url'),
-                        'created_at': metadata.get('created_at'),
-                        'distance': results['distances'][0][idx] if results.get('distances') else None
-                    })
+                    distance = results['distances'][0][idx] if results.get('distances') else None
+
+                    # similarity score 계산 (1 - distance)
+                    similarity_score = 1 - distance if distance is not None else None
+
+                    # similarity_threshold 필터링
+                    if similarity_score is not None and similarity_score >= similarity_threshold:
+                        search_results.append({
+                            'title': metadata.get('title'),
+                            'url': metadata.get('url'),
+                            'created_at': metadata.get('created_at'),
+                            'distance': distance,
+                            'similarity_score': similarity_score,
+                            'document': results['documents'][0][idx] if results.get('documents') else None
+                        })
 
             return search_results
         except Exception as e:
-            print(f"❌ 검색 실패: {e}")
+            print(f"❌ 임베딩 검색 실패: {e}")
             return []
 
     def get_all_news(self, limit: Optional[int] = None) -> List[Dict]:
-        """
-        모든 뉴스 가져오기
-        Args:
-            limit: 최대 개수 제한 (None이면 전체)
-        Returns:
-            뉴스 리스트
-        """
         try:
             count = self.collection.count()
             if count == 0:
@@ -128,13 +129,6 @@ class ChromaNewsDB:
             return []
 
     def delete_news_by_url(self, url: str) -> bool:
-        """
-        URL로 뉴스 삭제
-        Args:
-            url: 삭제할 뉴스 URL
-        Returns:
-            삭제 성공 여부
-        """
         try:
             # URL로 필터링하여 삭제
             self.collection.delete(
@@ -147,11 +141,6 @@ class ChromaNewsDB:
             return False
 
     def clear_all(self) -> bool:
-        """
-        모든 뉴스 삭제
-        Returns:
-            삭제 성공 여부
-        """
         try:
             # 컬렉션 리셋
             self.client.reset_collection(self.collection.name)
@@ -163,15 +152,9 @@ class ChromaNewsDB:
             return False
 
     def count(self) -> int:
-        """
-        저장된 뉴스 개수 반환
-        """
         return self.collection.count()
 
     def get_stats(self) -> Dict:
-        """
-        데이터베이스 통계 정보
-        """
         return {
             'total_count': self.count(),
             'collection_name': self.collection.name

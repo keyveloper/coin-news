@@ -12,10 +12,6 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 # ChromaDB 데이터 저장 경로
 CHROMA_DB_PATH = PROJECT_ROOT / "data" / "chroma_db"
 
-# ChromaDB 컬렉션 이름
-COLLECTION_NAME = "coin_news"
-
-
 class ChromaDBClient:
     """ChromaDB 클라이언트 싱글톤"""
 
@@ -50,40 +46,6 @@ class ChromaDBClient:
         """ChromaDB 클라이언트 반환"""
         return self._client
 
-    def get_or_create_collection(self, collection_name: str = COLLECTION_NAME):
-        """
-        컬렉션 가져오기 또는 생성
-        Args:
-            collection_name: 컬렉션 이름
-        Returns:
-            ChromaDB Collection 객체
-        """
-        collection = self._client.get_or_create_collection(
-            name=collection_name,
-            metadata={"description": "코인 뉴스 벡터 저장소"}
-        )
-        print(f"컬렉션 '{collection_name}' 로드 완료 (문서 수: {collection.count()})")
-        return collection
-
-    def reset_collection(self, collection_name: str = COLLECTION_NAME):
-        """
-        컬렉션 초기화 (모든 데이터 삭제)
-        Args:
-            collection_name: 컬렉션 이름
-        """
-        try:
-            self._client.delete_collection(name=collection_name)
-            print(f"컬렉션 '{collection_name}' 삭제 완료")
-        except Exception as e:
-            print(f"컬렉션 삭제 실패: {e}")
-
-        # 새로 생성
-        return self.get_or_create_collection(collection_name)
-
-    def list_collections(self):
-        """모든 컬렉션 목록 반환"""
-        collections = self._client.list_collections()
-        return [col.name for col in collections]
 
 
 # 전역 클라이언트 인스턴스
