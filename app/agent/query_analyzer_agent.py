@@ -1,11 +1,13 @@
 """Query Analyzer Service - Extract intent, date, coin, event from user queries using Claude"""
-import json
 import logging
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, cast, Any
+
 from anthropic import Anthropic
-from anthropic.types import MessageParam
+from anthropic.types import MessageParam, ToolParam
+
+from app.schemas.normalized_query import NormalizedQuery
 
 logger = logging.getLogger(__name__)
 
@@ -42,29 +44,9 @@ class QueryAnalyzerService:
         # 3. External client
         self.client = Anthropic(api_key=self.anthropic_api_key)
 
-        # 4. Load prompts
-        self.prompt_dir = Path(__file__).parent.parent / "prompt"
-
-        # 7. Settings
-        self.max_query_length = 200
-
-        # 8. Cache
-        self._query_cache: Dict[str, dict] = {}
-
-        self._initialized = True
-        self.logger.info(f"QueryAnalyzerService initialized with model: {self.model_name}")
-
-    def _load_prompt(self, filename: str) -> str:
-        """
-        Load prompt from file
-
-        Args:
-            filename: Prompt file name
-
-        Returns:
-            Prompt content as string
-        """
-        prompt_path = self.prompt_dir / filename
+        # 4. Load system prompt
+        prompt_dir = Path(__file__).parent.parent / "prompt"
+        prompt_path = prompt_dir / "query_to_json_system_prompt"
 
         if not prompt_path.exists():
             self.logger.error(f"Prompt file not found: {prompt_path}")
@@ -72,13 +54,20 @@ class QueryAnalyzerService:
 
         try:
             with open(prompt_path, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                self.logger.info(f"Loaded prompt from {filename}: {len(content)} characters")
-                return content
+                self.system_prompt = f.read().strip()
+                self.logger.info(f"Loaded system prompt: {len(self.system_prompt)} characters")
         except Exception as e:
-            self.logger.error(f"Error loading prompt file {filename}: {e}")
+            self.logger.error(f"Error loading prompt file: {e}")
             raise
 
+        # 5. Settings
+        self.max_query_length = 200
+
+        # 6. Cache
+        self._query_cache: Dict[str, dict] = {}
+
+        self._initialized = True
+        self.logger.info(f"QueryAnalyzerService initialized with model: {self.model_name}")
 
     def analyze_query(self, query: str) -> Dict:
         self.logger.info(f"Analyzing query: {query}")
@@ -86,19 +75,36 @@ class QueryAnalyzerService:
         if len(query) > self.max_query_length:
             raise ValueError(f"Query too long (max {self.max_query_length} characters)")
 
-        task_prompt = f"{self._load_prompt('query_to_json_system_prompt')}\n\n{query}"
-        self.logger.info(f"final prompt: {task_prompt}")
+        # System prompt for tool usage
+        messages: list[MessageParam] = [{"role": "user", "content": query}]
 
-        messages: list[MessageParam] = [{"role": "user", "content": task_prompt}]
+        # Convert Pydantic model to tool schema
+        tool_schema: ToolParam = {
+            "name": "analyze_query",
+            "description": "Analyze and extract structured information from a cryptocurrency query",
+            "input_schema": cast(Any, NormalizedQuery.model_json_schema()),
+        }
 
         message = self.client.messages.create(
             model=self.model_name,
             max_tokens=self.max_tokens,
             temperature=self.temperature,
-            messages=messages
+            system=self.system_prompt,
+            messages=messages,
+            tools=[tool_schema],
+            tool_choice={"type": "tool", "name": "analyze_query"}  # type: ignore
         )
 
-        response_text = message.content[0].text
-        self.logger.info(f"Claude response: {response_text}")
+        self.logger.info(f"Claude response: {message}")
 
-        return json.loads(response_text)
+        # Extract tool use result
+        for content_block in message.content:
+            if content_block.type == "tool_use" and content_block.name == "analyze_query":
+                result = content_block.input
+                self.logger.info(f"Parsed result: {result}")
+
+                # Validate with Pydantic model
+                validated = NormalizedQuery(**result)
+                return validated.model_dump()
+
+        raise ValueError("No tool use found in response")

@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 
-from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
 
-from app.tools.tools import analyze_query
+from app.tools.tools import *
 
 
 class TaskPlanningAgent:
@@ -46,6 +46,17 @@ class TaskPlanningAgent:
 
 
     def make_plan(self, query_json: Dict) -> Dict:
+        """
+        1.
+        :param query_json:
+        :return:
+        """
+        similarity_threshold = 0
+        time_range = 0
+        coin_names = query_json["target"]["coin"]
+
+
+
 
 
 def get_task_planning_agent() -> TaskPlanningAgent:

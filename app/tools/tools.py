@@ -5,16 +5,6 @@ from app.repository.news_repository import NewsRepository
 from app.repository.price_repository import PriceRepository
 
 
-# ==================== Query Analyzer ====================
-
-@tool
-def analyze_query(query: str) -> Dict:
-    """사용자 쿼리를 분석하여 구조화된 정보로 변환합니다."""
-    return QueryAnalyzerService().analyze_query(query)
-
-
-# ==================== NewsRepository Tools ====================
-
 @tool
 def search_news_by_semantic_query(
     query_embedding: List[float],
@@ -60,53 +50,8 @@ def search_news_by_semantic_query_with_date(
         query_embedding, top_k, similarity_threshold, pivot_date
     )
 
-
-@tool
-def get_all_news(limit: int = None) -> List[Dict]:
-    """
-    모든 뉴스를 조회합니다.
-
-    Args:
-        limit: 조회 개수 제한 (None이면 전체 조회)
-
-    Returns:
-        뉴스 리스트
-    """
-    repo = NewsRepository()
-    return repo.find_all_news(limit)
-
-
-@tool
-def delete_news_by_url(url: str) -> bool:
-    """
-    URL로 뉴스를 삭제합니다.
-
-    Args:
-        url: 삭제할 뉴스 URL
-
-    Returns:
-        삭제 성공 여부
-    """
-    repo = NewsRepository()
-    return repo.delete_news_by_url(url)
-
-
-@tool
-def count_news() -> int:
-    """저장된 뉴스 개수를 조회합니다."""
-    repo = NewsRepository()
-    return repo.count()
-
-
-@tool
-def get_news_stats() -> Dict:
-    """뉴스 저장소 통계를 조회합니다."""
-    repo = NewsRepository()
-    return repo.get_stats()
-
-
 # ==================== PriceRepository Tools ====================
-
+# plannings: [ "tool": "get_price_by_hour_range", "parameters": "coin_news: " ]
 @tool
 def get_price_by_hour_range(coin_name: str, spot_time: int) -> List[Dict]:
     """
