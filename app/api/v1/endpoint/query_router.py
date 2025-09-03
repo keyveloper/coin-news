@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.services.query_analyzer_service import QueryAnalyzerService
+from app.agent.query_analyzer_agent import QueryAnalyzerService
 
 query_router = APIRouter(prefix="/query", tags=["query"])
 

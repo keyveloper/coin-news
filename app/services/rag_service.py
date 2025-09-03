@@ -32,7 +32,6 @@ class RAGService:
 
         # Load prompts from files
         self.prompt_dir = Path(__file__).parent.parent / "prompt"
-        self.query_parser_prompt = self._load_prompt("query_parser_system_prompt.txt")
         self.analysis_prompt = self._load_prompt("analysis_system_prompt.txt")
         self.script_prompt_template = self._load_prompt("script_prompt.txt")
 

@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Dict, Optional
 from anthropic import Anthropic
 from anthropic.types import MessageParam
-from langchain.tools import tool
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +86,7 @@ class QueryAnalyzerService:
         if len(query) > self.max_query_length:
             raise ValueError(f"Query too long (max {self.max_query_length} characters)")
 
-        task_prompt = f"{self._load_prompt('query_analyzer_task_prompt')}\n\n{query}"
+        task_prompt = f"{self._load_prompt('query_to_json_system_prompt')}\n\n{query}"
         self.logger.info(f"final prompt: {task_prompt}")
 
         messages: list[MessageParam] = [{"role": "user", "content": task_prompt}]

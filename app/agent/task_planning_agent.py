@@ -45,8 +45,19 @@ class TaskPlanningAgent:
         self._initialized = True
 
 
-    def make_plan(self, query: str) -> Dict:
-        result = self.agent.invoke({"messages": [("user", query)]})
+    def make_plan(self, query_json: Dict) -> Dict:
+        """
+        Dict = {
+            "date"
+            "coin_name"
+            "intent"
+            "event"
+        }
+        :param query_json:
+        :return:
+        """
+
+
         return result
 
 

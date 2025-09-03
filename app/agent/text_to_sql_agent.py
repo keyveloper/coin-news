@@ -20,5 +20,3 @@ class Text2SqlService:
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         if not self.anthropic_api_key:
             return ValueError("ANTHROPIC_API_KEY not set")
-
-        self.model_name =

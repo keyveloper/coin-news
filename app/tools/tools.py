@@ -1,6 +1,6 @@
 from typing import Dict
 from langchain.tools import tool
-from app.services.query_analyzer_service import QueryAnalyzerService
+from app.agent.query_analyzer_agent import QueryAnalyzerService
 
 
 @tool
