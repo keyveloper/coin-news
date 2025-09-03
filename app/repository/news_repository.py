@@ -104,7 +104,70 @@ class NewsRepository:
             print(f"❌ 임베딩 검색 실패: {e}")
             return []
 
-    def get_all_news(self, limit: Optional[int] = None) -> List[Dict]:
+    def find_by_semantic_query_with_one_day_range(
+        self,
+        query_embedding: List[float],
+        tok_k: int,
+        similarity_threshold: float,
+        pivot_date: int
+    ) -> List[Dict]:
+        try:
+            # pivot_date가 00:00:00인지 확인
+            pivot_dt = datetime.fromtimestamp(pivot_date)
+            if pivot_dt.hour != 0 or pivot_dt.minute != 0 or pivot_dt.second != 0:
+                raise ValueError(
+                    f"pivot_date는 00:00:00이어야 합니다. "
+                    f"현재: {pivot_dt.strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+
+            # date_end 계산: pivot_date의 23:59:59
+            date_start = pivot_date
+            date_end = pivot_date + (24 * 60 * 60 - 1)  # +86399초 (23시간 59분 59초)
+
+            # ChromaDB의 query 메서드로 벡터 검색
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=tok_k,
+                where={
+                    "$and": [
+                        {"publish_date": {"$gte": date_start}},
+                        {"publish_date": {"$lte": date_end}},
+                    ]
+                }
+            )
+
+            # 결과 포맷팅 및 필터링
+            search_results = []
+            if results['metadatas'] and results['metadatas'][0]:
+                for idx, metadata in enumerate(results['metadatas'][0]):
+                    distance = results['distances'][0][idx] if results.get('distances') else None
+
+                    # similarity score 계산 (1 - distance)
+                    similarity_score = 1 - distance if distance is not None else None
+
+                    # similarity_threshold 필터링
+                    if similarity_score is not None and similarity_score >= similarity_threshold:
+                        search_results.append({
+                            'title': metadata.get('title'),
+                            'link': metadata.get('link'),
+                            'publish_date': metadata.get('publish_date'),
+                            'publish_date_readable': metadata.get('publish_date_readable'),
+                            'source': metadata.get('source'),
+                            'query': metadata.get('query'),
+                            'distance': distance,
+                            'similarity_score': similarity_score,
+                            'document': results['documents'][0][idx] if results.get('documents') else None
+                        })
+
+            return search_results
+        except ValueError as ve:
+            print(f"❌ 날짜 검증 실패: {ve}")
+            raise  # ValueError는 다시 던져서 Service에서 처리
+        except Exception as e:
+            print(f"❌ 임베딩 검색 실패: {e}")
+            return []
+
+    def find_all_news(self, limit: Optional[int] = None) -> List[Dict]:
         try:
             count = self.collection.count()
             if count == 0:
@@ -135,17 +198,6 @@ class NewsRepository:
                 where={"url": url}
             )
             print(f"✅ 뉴스 삭제 완료: {url}")
-            return True
-        except Exception as e:
-            print(f"❌ 뉴스 삭제 실패: {e}")
-            return False
-
-    def clear_all(self) -> bool:
-        try:
-            # 컬렉션 리셋
-            self.client.reset_collection(self.collection.name)
-            self.collection = self.client.get_or_create_collection(self.collection.name)
-            print("✅ 모든 뉴스 삭제 완료")
             return True
         except Exception as e:
             print(f"❌ 뉴스 삭제 실패: {e}")
