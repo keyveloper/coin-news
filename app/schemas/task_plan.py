@@ -1,5 +1,5 @@
 """Task Plan Schema for Task Planning Agent"""
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -19,6 +19,11 @@ class TaskPlan(BaseModel):
         "news_summary",
         "price_reason"
     ] = Field(description="Intent type from the normalized query")
+
+    pivot_time: Optional[int] = Field(
+        None,
+        description="Pivot timestamp for data queries (epoch time). If 'today' in query, this should be current date at 00:00:00"
+    )
 
     action_plan: List[ToolCall] = Field(
         description="Ordered list of tool calls to execute"

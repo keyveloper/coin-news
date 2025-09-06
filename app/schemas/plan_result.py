@@ -1,26 +1,8 @@
 """Plan Result Schema for Executor Agent"""
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-
-
-class NewsChunk(BaseModel):
-    """Single news article data"""
-    title: Optional[str] = None
-    content: Optional[str] = None
-    published_date: Optional[str] = None
-    url: Optional[str] = None
-    similarity_score: Optional[float] = None
-
-
-class CoinPrice(BaseModel):
-    """Single price data point"""
-    timestamp: int = Field(description="Unix timestamp")
-    date: Optional[str] = None
-    open: Optional[float] = None
-    high: Optional[float] = None
-    low: Optional[float] = None
-    close: float = Field(description="Closing price")
-    volume: Optional[float] = None
+from app.schemas.vector_news import VectorNewsResult
+from app.schemas.price import PriceData, PriceHourlyData
 
 
 class PlanResult(BaseModel):
@@ -29,14 +11,19 @@ class PlanResult(BaseModel):
     intent_type: str = Field(description="Intent type from TaskPlan")
 
     # Collected data by coin
-    collected_coin_prices: Dict[str, List[CoinPrice]] = Field(
+    collected_coin_prices: Dict[str, List[PriceData]] = Field(
         default_factory=dict,
-        description="Price data collected per coin. Key: coin_name (e.g., 'BTC'), Value: list of price data"
+        description="Daily price data collected per coin. Key: coin_name (e.g., 'BTC'), Value: list of PriceData"
     )
 
-    collected_news_chunks: List[NewsChunk] = Field(
+    collected_coin_hourly_prices: Dict[str, List[PriceHourlyData]] = Field(
+        default_factory=dict,
+        description="Hourly price data collected per coin. Key: coin_name (e.g., 'BTC'), Value: list of PriceHourlyData"
+    )
+
+    collected_news_chunks: List[VectorNewsResult] = Field(
         default_factory=list,
-        description="News articles collected from searches"
+        description="News articles collected from semantic searches"
     )
 
     # Metadata
@@ -48,6 +35,8 @@ class PlanResult(BaseModel):
     analysis_instructions: str = Field(
         description="Instructions for how to analyze the collected data"
     )
+
+    #semantice query:
 
     # Execution statistics
     total_actions: int = Field(description="Total number of tool calls")
@@ -65,7 +54,12 @@ class PlanResult(BaseModel):
                 "intent_type": "market_trend",
                 "collected_coin_prices": {
                     "BTC": [
-                        {"timestamp": 1733011200, "close": 42000.5, "high": 42500.0, "low": 41800.0}
+                        {"date": "2024-12-01", "close": 42000.5, "time": 1733011200}
+                    ]
+                },
+                "collected_coin_hourly_prices": {
+                    "BTC": [
+                        {"time": 1733011200, "high": 42500.0, "low": 41800.0, "open": 42100.0, "close": 42300.0}
                     ]
                 },
                 "collected_news_chunks": [

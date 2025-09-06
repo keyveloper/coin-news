@@ -21,21 +21,6 @@ class VectorNewsResult(BaseModel):
     similarity_score: Optional[float] = Field(None, description="유사도 점수 (1 - distance)")
     document: Optional[str] = Field(None, description="뉴스 본문/요약")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "title": "Bitcoin price surges to new high",
-                "link": "https://example.com/news/123",
-                "publish_date": 1733011200,
-                "publish_date_readable": "2024-12-01",
-                "source": "CryptoNews",
-                "query": "BTC",
-                "distance": 0.15,
-                "similarity_score": 0.85,
-                "document": "Bitcoin reached a new all-time high today..."
-            }
-        }
-
 
 class VectorNewsBasic(BaseModel):
     """
@@ -44,12 +29,3 @@ class VectorNewsBasic(BaseModel):
     title: Optional[str] = Field(None, description="뉴스 제목")
     url: Optional[str] = Field(None, description="뉴스 URL")
     created_at: Optional[str] = Field(None, description="생성 시간 (ISO format)")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "title": "Ethereum upgrade completed",
-                "url": "https://example.com/news/456",
-                "created_at": "2024-12-01T10:30:00"
-            }
-        }
