@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pymongo.database import Database
 from pymongo.collection import Collection
 from app.config.mongodb_config import get_mongodb_client
+from app.schemas.price import PriceData, PriceHourlyData
 
 
 class PriceRepository:
@@ -34,7 +35,7 @@ class PriceRepository:
 
             print(f"✅ PriceRepository 초기화 완료 (DB: {self._database_name}, Collection: {self._collection_name})")
 
-    def _get_daily_close_values(self, coin_name: str, date_start: str, date_end: str) -> List[Dict]:
+    def _get_daily_close_values(self, coin_name: str, date_start: str, date_end: str) -> List[PriceData]:
         try:
             pipeline = [
                 {
@@ -72,7 +73,7 @@ class PriceRepository:
             ]
 
             results = list(self.collection.aggregate(pipeline))
-            return results
+            return [PriceData(**result) for result in results]
         except Exception as e:
             print(f"❌ 날짜별 close 값 조회 실패: {e}")
             return []
@@ -81,7 +82,7 @@ class PriceRepository:
         self,
         coin_name: str,
         spot_time: int
-    ) -> List[Dict]:
+    ) -> List[PriceHourlyData]:
         try:
             # 1시간 = 3600초
             time_start = spot_time - 3600
@@ -100,13 +101,13 @@ class PriceRepository:
             formatted_results = []
             for doc in results:
                 price_data = doc.get("price_date", {})
-                formatted_results.append({
-                    "time": price_data.get("time"),
-                    "high": price_data.get("high"),
-                    "low": price_data.get("low"),
-                    "open": price_data.get("open"),
-                    "close": price_data.get("close")
-                })
+                formatted_results.append(PriceHourlyData(
+                    time=price_data.get("time"),
+                    high=price_data.get("high"),
+                    low=price_data.get("low"),
+                    open=price_data.get("open"),
+                    close=price_data.get("close")
+                ))
 
             return formatted_results
         except Exception as e:
@@ -117,7 +118,7 @@ class PriceRepository:
         self,
         coin_name: str,
         pivot_date: int
-    ) -> List[Dict]:
+    ) -> List[PriceData]:
         try:
             # pivot_date가 00:00:00인지 확인
             pivot_dt = datetime.fromtimestamp(pivot_date)
@@ -142,7 +143,7 @@ class PriceRepository:
         self,
         coin_name: str,
         spot_date: int
-    ) -> List[Dict]:
+    ) -> List[PriceData]:
         try:
             date_start = datetime.fromtimestamp(spot_date - (7 * 24 * 60 * 60)).strftime("%Y-%m-%d")
             date_end = datetime.fromtimestamp(spot_date).strftime("%Y-%m-%d")
@@ -157,7 +158,7 @@ class PriceRepository:
         self,
         coin_name: str,
         spot_date: int
-    ) -> List[Dict]:
+    ) -> List[PriceData]:
         try:
             date_start = datetime.fromtimestamp(spot_date).strftime("%Y-%m-%d")
             date_end = datetime.fromtimestamp(spot_date + (7 * 24 * 60 * 60)).strftime("%Y-%m-%d")
@@ -172,7 +173,7 @@ class PriceRepository:
         self,
         coin_name: str,
         spot_date: int
-    ) -> List[Dict]:
+    ) -> List[PriceData]:
         try:
             date_start = datetime.fromtimestamp(spot_date - (30 * 24 * 60 * 60)).strftime("%Y-%m-%d")
             date_end = datetime.fromtimestamp(spot_date).strftime("%Y-%m-%d")
@@ -187,7 +188,7 @@ class PriceRepository:
         self,
         coin_name: str,
         spot_date: int
-    ) -> List[Dict]:
+    ) -> List[PriceData]:
         try:
             date_start = datetime.fromtimestamp(spot_date).strftime("%Y-%m-%d")
             date_end = datetime.fromtimestamp(spot_date + (30 * 24 * 60 * 60)).strftime("%Y-%m-%d")
@@ -202,7 +203,7 @@ class PriceRepository:
         self,
         coin_name: str,
         spot_date: int
-    ) -> List[Dict]:
+    ) -> List[PriceData]:
         try:
             date_start = datetime.fromtimestamp(spot_date - (365 * 24 * 60 * 60)).strftime("%Y-%m-%d")
             date_end = datetime.fromtimestamp(spot_date).strftime("%Y-%m-%d")
@@ -217,7 +218,7 @@ class PriceRepository:
         self,
         coin_name: str,
         limit: Optional[int] = None
-    ) -> List[Dict]:
+    ) -> List[PriceData]:
         try:
             # 전체 기간 조회 (매우 넓은 범위)
             date_start = "2000-01-01"
