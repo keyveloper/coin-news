@@ -14,12 +14,13 @@ from pathlib import Path
 from typing import Dict, Optional
 from fastapi import HTTPException
 from langchain_anthropic import ChatAnthropic
+from langsmith import traceable
 from app.schemas.query_plan import QueryPlan, ToolCall
 from datetime import datetime, timezone
 
 # Register DB tools
 from app.tools.price_tools import get_coin_price
-from app.tools.vector_tools import semantic_search
+from app.tools.vector_tools import make_semantic_query, semantic_search, extract_queries_from_news
 
 
 class QueryPlanningAgent:
@@ -34,7 +35,8 @@ class QueryPlanningAgent:
 
     Available Tools:
     - get_coin_price: 가격 데이터 조회
-    - semantic_search: 시맨틱 뉴스 검색 (query string 기반)
+    - make_semantic_query: NormalizedQuery → 시맨틱 쿼리 문자열 생성
+    - semantic_search: 시맨틱 뉴스 검색
     """
     _instance: Optional["QueryPlanningAgent"] = None
 
@@ -65,11 +67,15 @@ class QueryPlanningAgent:
         self.system_prompt = prompt_file.read_text(encoding="utf-8")
 
         # Registered DB tools
-        # - get_coin_price: 통합 가격 조회 tool
-        # - semantic_search: 통합 시맨틱 뉴스 검색 tool
+        # - get_coin_price: 가격 조회 tool
+        # - make_semantic_query: 시맨틱 쿼리 생성 tool
+        # - semantic_search: 시맨틱 뉴스 검색 tool
+        # - extract_queries_from_news: 뉴스에서 연관 쿼리 추출 tool
         self.tools = [
             get_coin_price,
+            make_semantic_query,
             semantic_search,
+            extract_queries_from_news,
         ]
 
         # Bind tools to LLM
@@ -77,15 +83,15 @@ class QueryPlanningAgent:
 
         self._initialized = True
 
+    @traceable(name="QueryPlanner.make_plan", run_type="chain")
     def make_plan(self, normalized_query: Dict) -> QueryPlan:
         """
         NormalizedQuery를 분석하여 QueryPlan 생성.
 
-        Process:
-        1. NormalizedQuery 데이터 분석 (intent_type, target, time_range, goal)
-        2. 등록된 tools의 파라미터 확인
-        3. NormalizedQuery → tool arguments 매핑
-        4. QueryPlan 반환
+        LangSmith에서 추적:
+        - Input: NormalizedQuery (intent_type, target, time_range 등)
+        - Output: QueryPlan (tool_name, arguments 리스트)
+        - LLM이 어떤 tool을 선택했는지 확인 가능
 
         :param normalized_query: NormalizedQuery as dict
         :return: QueryPlan with mapped tool calls
