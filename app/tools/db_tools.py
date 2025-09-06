@@ -1,8 +1,10 @@
 """Database Tools for News and Price Repository Access"""
-from typing import Dict, List
+from typing import List
 from langchain.tools import tool
 from app.repository.news_repository import NewsRepository
 from app.repository.price_repository import PriceRepository
+from app.schemas.price import PriceData, PriceHourlyData
+from app.schemas.vector_news import VectorNewsResult
 
 
 # ==================== News Repository Tools ====================
@@ -12,7 +14,7 @@ def search_news_by_semantic_query(
     query_embedding: List[float],
     top_k: int = 10,
     similarity_threshold: float = 0.7
-) -> List[Dict]:
+) -> List[VectorNewsResult]:
     """
     임베딩 벡터로 의미적으로 유사한 뉴스를 검색합니다.
 
@@ -34,7 +36,7 @@ def search_news_by_semantic_query_with_date(
     pivot_date: int,
     top_k: int = 10,
     similarity_threshold: float = 0.7
-) -> List[Dict]:
+) -> List[VectorNewsResult]:
     """
     특정 날짜(하루) 범위 내에서 임베딩 벡터로 뉴스를 검색합니다.
 
@@ -56,7 +58,7 @@ def search_news_by_semantic_query_with_date(
 # ==================== Price Repository Tools ====================
 
 @tool
-def get_price_by_hour_range(coin_name: str, spot_time: int) -> List[Dict]:
+def get_price_by_hour_range(coin_name: str, spot_time: int) -> List[PriceHourlyData]:
     """
     기준 시간으로부터 1시간 전/후 가격 데이터를 조회합니다 (각 시간별 high, low).
 
@@ -72,7 +74,7 @@ def get_price_by_hour_range(coin_name: str, spot_time: int) -> List[Dict]:
 
 
 @tool
-def get_price_by_oneday(coin_name: str, pivot_date: int) -> List[Dict]:
+def get_price_by_oneday(coin_name: str, pivot_date: int) -> List[PriceData]:
     """
     기준 날짜의 00:00:00 ~ 23:59:59 가격 데이터를 조회합니다 (마지막 시간대 close 값).
 
@@ -88,7 +90,7 @@ def get_price_by_oneday(coin_name: str, pivot_date: int) -> List[Dict]:
 
 
 @tool
-def get_price_week_before(coin_name: str, spot_date: int) -> List[Dict]:
+def get_price_week_before(coin_name: str, spot_date: int) -> List[PriceData]:
     """
     기준 날짜로부터 1주일 전 가격 데이터를 조회합니다 (각 날짜의 마지막 시간대 close 값).
 
@@ -104,7 +106,7 @@ def get_price_week_before(coin_name: str, spot_date: int) -> List[Dict]:
 
 
 @tool
-def get_price_week_after(coin_name: str, spot_date: int) -> List[Dict]:
+def get_price_week_after(coin_name: str, spot_date: int) -> List[PriceData]:
     """
     기준 날짜로부터 1주일 후 가격 데이터를 조회합니다 (각 날짜의 마지막 시간대 close 값).
 
@@ -120,7 +122,7 @@ def get_price_week_after(coin_name: str, spot_date: int) -> List[Dict]:
 
 
 @tool
-def get_price_month_before(coin_name: str, spot_date: int) -> List[Dict]:
+def get_price_month_before(coin_name: str, spot_date: int) -> List[PriceData]:
     """
     기준 날짜로부터 1개월 전 가격 데이터를 조회합니다 (각 날짜의 마지막 시간대 close 값).
 
@@ -136,7 +138,7 @@ def get_price_month_before(coin_name: str, spot_date: int) -> List[Dict]:
 
 
 @tool
-def get_price_month_after(coin_name: str, spot_date: int) -> List[Dict]:
+def get_price_month_after(coin_name: str, spot_date: int) -> List[PriceData]:
     """
     기준 날짜로부터 1개월 후 가격 데이터를 조회합니다 (각 날짜의 마지막 시간대 close 값).
 
@@ -152,7 +154,7 @@ def get_price_month_after(coin_name: str, spot_date: int) -> List[Dict]:
 
 
 @tool
-def get_price_year(coin_name: str, spot_date: int) -> List[Dict]:
+def get_price_year(coin_name: str, spot_date: int) -> List[PriceData]:
     """
     기준 날짜로부터 1년 전 가격 데이터를 조회합니다 (각 날짜의 마지막 시간대 close 값).
 
@@ -168,7 +170,7 @@ def get_price_year(coin_name: str, spot_date: int) -> List[Dict]:
 
 
 @tool
-def get_all_price_by_coin(coin_name: str, limit: int = None) -> List[Dict]:
+def get_all_price_by_coin(coin_name: str, limit: int = None) -> List[PriceData]:
     """
     해당 코인의 모든 가격 데이터를 조회합니다 (각 날짜의 마지막 시간대 close 값).
 
