@@ -76,12 +76,8 @@ class NormalizedQuery(BaseModel):
     # Main fields
     intent_type: Literal[
         "market_trend",
-        "coin_info",
         "news_summary",
         "price_reason",
-        "compare",
-        "sentiment",
-        "pattern_analysis",
         "unknown"
     ] = Field(description="Type of user intent")
 
@@ -89,4 +85,4 @@ class NormalizedQuery(BaseModel):
     event: Event = Field(description="Event information")
     goal: Goal = Field(description="User's goal")
     time_range: TimeRange = Field(description="Time range for analysis")
-    filters: Filters = Field(description="Additional filters")
+    filters: Filters = Field(default_factory=Filters, description="Additional filters")
