@@ -1,6 +1,6 @@
 """
-Configuration module
+Database operations module
 """
-from .chroma_config import get_chroma_client, ChromaDBClient
+from app.repository.news_repository import ChromaNewsDB
 
-__all__ = ['get_chroma_client', 'ChromaDBClient']
+__all__ = ['ChromaNewsDB']
