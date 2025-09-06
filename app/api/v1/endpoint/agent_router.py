@@ -4,10 +4,10 @@ import logging
 from fastapi import APIRouter, Query, HTTPException, Depends
 
 from app.agent.query_analyzer_agent import QueryAnalyzerService
-from app.agent.task_planning_agent import TaskPlanningAgent
+from app.agent.query_planning_agent import QueryPlanningAgent
 from app.agent.executor_agent import ExecutorAgent
 from app.schemas.normalized_query import NormalizedQuery
-from app.schemas.task_plan import TaskPlan
+from app.schemas.query_plan import QueryPlan
 
 logger = logging.getLogger(__name__)
 
@@ -46,76 +46,76 @@ def analyze_query(
         raise HTTPException(status_code=500, detail=f"Query analysis failed: {str(e)}")
 
 
-# ==================== 2. Task Planning Agent ====================
+# ==================== 2. Query Planning Agent ====================
 
 @agent_router.post("/plan")
-def create_task_plan(
+def create_query_plan(
     query: str = Query(..., description="Natural language query to plan"),
     query_analyzer: QueryAnalyzerService = Depends(QueryAnalyzerService),
-    task_planner: TaskPlanningAgent = Depends(TaskPlanningAgent)
+    query_planner: QueryPlanningAgent = Depends(QueryPlanningAgent)
 ):
     """
-    [Layer 2] Task Planning Agent
+    [Layer 2] Query Planning Agent
 
-    Generates execution plan (TaskPlan) from NormalizedQuery.
+    Maps NormalizedQuery to DB tool calls (QueryPlan).
 
     - Input: Natural language query (internally calls QueryAnalyzer first)
-    - Output: TaskPlan (action_plan with tool calls, analysis_instructions)
+    - Output: QueryPlan (query_plan with mapped tool calls)
     """
     try:
         # Step 1: Analyze query
-        logger.info(f"[TaskPlanner] Input: {query}")
+        logger.info(f"[QueryPlanner] Input: {query}")
         normalized_query = query_analyzer.analyze_query(query)
-        logger.info(f"[TaskPlanner] Normalized: {normalized_query}")
+        logger.info(f"[QueryPlanner] Normalized: {normalized_query}")
 
         # Step 2: Create plan
-        task_plan = task_planner.make_plan(normalized_query)
-        logger.info(f"[TaskPlanner] Plan created with {len(task_plan.action_plan)} actions")
+        query_plan = query_planner.make_plan(normalized_query)
+        logger.info(f"[QueryPlanner] Plan created with {len(query_plan.query_plan)} tool calls")
 
         return {
             "status": "success",
-            "agent": "task_planner",
+            "agent": "query_planner",
             "input": query,
             "normalized_query": normalized_query,
-            "output": task_plan.model_dump()
+            "output": query_plan.model_dump()
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[TaskPlanner] Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Task planning failed: {str(e)}")
+        logger.error(f"[QueryPlanner] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Query planning failed: {str(e)}")
 
 
 @agent_router.post("/plan/from-json")
-def create_task_plan_from_json(
+def create_query_plan_from_json(
     normalized_query: NormalizedQuery,
-    task_planner: TaskPlanningAgent = Depends(TaskPlanningAgent)
+    query_planner: QueryPlanningAgent = Depends(QueryPlanningAgent)
 ):
     """
-    [Layer 2] Task Planning Agent (Direct JSON input)
+    [Layer 2] Query Planning Agent (Direct JSON input)
 
-    Generates execution plan directly from NormalizedQuery JSON.
+    Maps NormalizedQuery JSON directly to QueryPlan.
 
     - Input: NormalizedQuery JSON body
-    - Output: TaskPlan
+    - Output: QueryPlan
     """
     try:
-        logger.info(f"[TaskPlanner] Direct JSON input: {normalized_query}")
+        logger.info(f"[QueryPlanner] Direct JSON input: {normalized_query}")
 
-        task_plan = task_planner.make_plan(normalized_query.model_dump())
-        logger.info(f"[TaskPlanner] Plan created with {len(task_plan.action_plan)} actions")
+        query_plan = query_planner.make_plan(normalized_query.model_dump())
+        logger.info(f"[QueryPlanner] Plan created with {len(query_plan.query_plan)} tool calls")
 
         return {
             "status": "success",
-            "agent": "task_planner",
+            "agent": "query_planner",
             "input": normalized_query.model_dump(),
-            "output": task_plan.model_dump()
+            "output": query_plan.model_dump()
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[TaskPlanner] Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Task planning failed: {str(e)}")
+        logger.error(f"[QueryPlanner] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Query planning failed: {str(e)}")
 
 
 # ==================== 3. Executor Agent ====================
@@ -124,15 +124,15 @@ def create_task_plan_from_json(
 def execute_plan(
     query: str = Query(..., description="Natural language query to execute"),
     query_analyzer: QueryAnalyzerService = Depends(QueryAnalyzerService),
-    task_planner: TaskPlanningAgent = Depends(TaskPlanningAgent),
+    query_planner: QueryPlanningAgent = Depends(QueryPlanningAgent),
     executor: ExecutorAgent = Depends(ExecutorAgent)
 ):
     """
     [Layer 3] Executor Agent
 
-    Executes TaskPlan by calling database tools and collecting results.
+    Executes QueryPlan by calling database tools and collecting results.
 
-    - Input: Natural language query (internally calls QueryAnalyzer + TaskPlanner first)
+    - Input: Natural language query (internally calls QueryAnalyzer + QueryPlanner first)
     - Output: PlanResult (collected prices, news, execution stats)
     """
     try:
@@ -141,11 +141,11 @@ def execute_plan(
         normalized_query = query_analyzer.analyze_query(query)
 
         # Step 2: Create plan
-        task_plan = task_planner.make_plan(normalized_query)
-        logger.info(f"[Executor] Executing {len(task_plan.action_plan)} actions")
+        query_plan = query_planner.make_plan(normalized_query)
+        logger.info(f"[Executor] Executing {len(query_plan.query_plan)} tool calls")
 
         # Step 3: Execute plan
-        plan_result = executor.do_plan(task_plan)
+        plan_result = executor.do_plan(query_plan)
         logger.info(f"[Executor] Result: {plan_result.successful_actions}/{plan_result.total_actions} successful")
 
         return {
@@ -153,7 +153,7 @@ def execute_plan(
             "agent": "executor",
             "input": query,
             "normalized_query": normalized_query,
-            "task_plan": task_plan.model_dump(),
+            "query_plan": query_plan.model_dump(),
             "output": plan_result.model_dump()
         }
     except HTTPException:
@@ -165,27 +165,27 @@ def execute_plan(
 
 @agent_router.post("/execute/from-plan")
 def execute_from_plan(
-    task_plan: TaskPlan,
+    query_plan: QueryPlan,
     executor: ExecutorAgent = Depends(ExecutorAgent)
 ):
     """
-    [Layer 3] Executor Agent (Direct TaskPlan input)
+    [Layer 3] Executor Agent (Direct QueryPlan input)
 
-    Executes TaskPlan directly from JSON body.
+    Executes QueryPlan directly from JSON body.
 
-    - Input: TaskPlan JSON body
+    - Input: QueryPlan JSON body
     - Output: PlanResult
     """
     try:
-        logger.info(f"[Executor] Direct TaskPlan input with {len(task_plan.action_plan)} actions")
+        logger.info(f"[Executor] Direct QueryPlan input with {len(query_plan.query_plan)} tool calls")
 
-        plan_result = executor.do_plan(task_plan)
+        plan_result = executor.do_plan(query_plan)
         logger.info(f"[Executor] Result: {plan_result.successful_actions}/{plan_result.total_actions} successful")
 
         return {
             "status": "success",
             "agent": "executor",
-            "input": task_plan.model_dump(),
+            "input": query_plan.model_dump(),
             "output": plan_result.model_dump()
         }
     except Exception as e:
@@ -199,13 +199,13 @@ def execute_from_plan(
 def run_full_chain(
     query: str = Query(..., description="Natural language query to process"),
     query_analyzer: QueryAnalyzerService = Depends(QueryAnalyzerService),
-    task_planner: TaskPlanningAgent = Depends(TaskPlanningAgent),
+    query_planner: QueryPlanningAgent = Depends(QueryPlanningAgent),
     executor: ExecutorAgent = Depends(ExecutorAgent)
 ):
     """
     [Full Chain] All Agents in sequence
 
-    Runs complete pipeline: QueryAnalyzer -> TaskPlanner -> Executor
+    Runs complete pipeline: QueryAnalyzer -> QueryPlanner -> Executor
 
     Returns all intermediate results for debugging.
     """
@@ -215,11 +215,11 @@ def run_full_chain(
         # Layer 1: Query Analysis
         normalized_query = query_analyzer.analyze_query(query)
 
-        # Layer 2: Task Planning
-        task_plan = task_planner.make_plan(normalized_query)
+        # Layer 2: Query Planning
+        query_plan = query_planner.make_plan(normalized_query)
 
         # Layer 3: Execution
-        plan_result = executor.do_plan(task_plan)
+        plan_result = executor.do_plan(query_plan)
 
         logger.info(f"[Chain] Completed: {plan_result.successful_actions}/{plan_result.total_actions}")
 
@@ -228,7 +228,7 @@ def run_full_chain(
             "agent": "full_chain",
             "input": query,
             "layer_1_query_analyzer": normalized_query,
-            "layer_2_task_planner": task_plan.model_dump(),
+            "layer_2_query_planner": query_plan.model_dump(),
             "layer_3_executor": plan_result.model_dump()
         }
     except HTTPException:

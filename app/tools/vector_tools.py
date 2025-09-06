@@ -1,139 +1,75 @@
-"""Vector Tools for Embedding Generation"""
+# -*- coding: utf-8 -*-
+"""
+Vector Tools - 시맨틱 뉴스 검색 도구
+
+NewsRepository.search를 호출하여 뉴스 검색 수행
+(embedding 변환은 repository 내부에서 처리)
+"""
 import logging
-from typing import List
+from typing import List, Optional, Literal
 from langchain.tools import tool
-from langchain_openai import OpenAIEmbeddings
+from app.repository.news_repository import NewsRepository
+from app.schemas.vector_news import VectorNewsResult
 
 logger = logging.getLogger(__name__)
 
-# Global embedding model (singleton)
-_embedding_model = None
-
-
-def _get_embedding_model():
-    """Get or initialize embedding model"""
-    global _embedding_model
-    if _embedding_model is None:
-        try:
-            _embedding_model = OpenAIEmbeddings(
-                model="text-embedding-3-small"
-            )
-            logger.info("Embedding model initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize embedding model: {e}")
-            raise
-    return _embedding_model
-
 
 @tool
-def generate_embedding(text: str) -> List[float]:
+def semantic_search(
+    query: str,
+    top_k: int = 10,
+    similarity_threshold: float = 0.7,
+    pivot_date: Optional[int] = None,
+    date_range: Optional[Literal["day", "week", "month"]] = None,
+    source: Optional[str] = None
+) -> List[VectorNewsResult]:
     """
-    Generate embedding vector from text for semantic search using OpenI.
+    시맨틱 뉴스 검색 - 쿼리 문자열로 관련 뉴스를 검색합니다.
+
+    QueryPlanningAgent가 NormalizedQuery를 분석하여 파라미터를 조합합니다:
+    - query: coin_name + intent_keywords + context 조합
+    - top_k: goal.depth에 따라 결정 (short: 10, medium: 15, deep: 25)
+    - similarity_threshold: goal.depth에 따라 결정 (short: 0.75, medium: 0.65, deep: 0.55)
+    - pivot_date: time_range.pivot_time (특정 날짜 필터링 시)
+    - date_range: 날짜 범위 (day, week, month)
 
     Args:
-        text: Text to convert to embedding vector
+        query: 검색할 쿼리 문자열 (예: "BTC 가격 상승 규제 기관 투자")
+        top_k: 반환할 최대 결과 개수 (기본값: 10)
+        similarity_threshold: 유사도 임계값 0~1 (기본값: 0.7)
+        pivot_date: 기준 날짜 (epoch timestamp, 00:00:00). None이면 날짜 필터 없음
+        date_range: 날짜 범위 ("day", "week", "month"). pivot_date와 함께 사용
+        source: 뉴스 출처 필터
 
     Returns:
-        List of floats representing the embedding vector (1536 dimensions for text-embedding-3-small)
+        검색된 뉴스 리스트
+
+    Examples:
+        # 기본 검색 (날짜 필터 없음)
+        semantic_search("BTC 가격 상승 원인 규제", top_k=15, similarity_threshold=0.65)
+
+        # 특정 날짜 하루 검색
+        semantic_search("ETH DeFi 업데이트", top_k=10, pivot_date=1727740800)
+
+        # 날짜 범위 검색 (pivot_date 기준 ±7일)
+        semantic_search("XRP 규제", pivot_date=1727740800, date_range="week")
     """
     try:
-        model = _get_embedding_model()
-        # OpenAIEmbeddings uses embed_query method, not encode
-        embedding = model.embed_query(text)
-        return embedding
+        logger.info(f"semantic_search: query={query}, top_k={top_k}, pivot_date={pivot_date}")
+
+        repo = NewsRepository()
+        results = repo.search(
+            query=query,
+            top_k=top_k,
+            similarity_threshold=similarity_threshold,
+            pivot_date=pivot_date,
+            date_range=date_range,
+            source=source
+        )
+
+        logger.info(f"Found {len(results)} news articles")
+        return results
+
     except Exception as e:
-        logger.error(f"Error generating embedding: {e}")
-        raise
-
-
-@tool
-def generate_search_query_from_context(
-    coin_name: str,
-    intent_type: str,
-    analysis_instructions: str
-) -> str:
-    """
-    Generate semantic search query from context.
-
-    Combines coin name, intent type, and extracts keywords from analysis instructions
-    to create an effective search query.
-
-    Args:
-        coin_name: Cryptocurrency symbol (e.g., "BTC", "ETH")
-        intent_type: Type of intent (market_trend, price_reason, news_summary)
-        analysis_instructions: Instructions containing keywords and context
-
-    Returns:
-        Optimized search query string
-    """
-    # Intent-specific keywords
-    intent_keywords = {
-        "market_trend": ["trend", "pattern", "movement", "direction"],
-        "price_reason": ["catalyst", "reason", "factor", "impact", "cause"],
-        "news_summary": ["development", "update", "event", "announcement"]
-    }
-
-    # Extract keywords from analysis_instructions
-    import re
-    # Common crypto/finance keywords to look for
-    keyword_patterns = [
-        r'\b(regulat\w+|adoption|upgrade|partnership|merger|acquisition)\b',
-        r'\b(surge|decline|volatility|stability|rally|crash)\b',
-        r'\b(institutional|retail|whale|trader|investor)\b',
-        r'\b(DeFi|NFT|Layer\s*\d+|protocol|blockchain)\b',
-        r'\b(bullish|bearish|neutral|sentiment)\b'
-    ]
-
-    extracted_keywords = []
-    for pattern in keyword_patterns:
-        matches = re.findall(pattern, analysis_instructions, re.IGNORECASE)
-        extracted_keywords.extend([m if isinstance(m, str) else m[0] for m in matches])
-
-    # Combine components
-    query_parts = [coin_name]
-
-    # Add intent-specific keywords
-    if intent_type in intent_keywords:
-        query_parts.extend(intent_keywords[intent_type][:2])  # Top 2 keywords
-
-    # Add extracted keywords (limit to 5)
-    if extracted_keywords:
-        query_parts.extend(list(set(extracted_keywords))[:5])
-
-    query = " ".join(query_parts)
-    logger.info(f"Generated search query: {query}")
-
-    return query
-
-
-@tool
-def embed_search_query(
-    coin_name: str,
-    intent_type: str,
-    analysis_instructions: str
-) -> List[float]:
-    """
-    Generate embedding for semantic news search from context.
-
-    This is a convenience tool that combines query generation and embedding.
-
-    Args:
-        coin_name: Cryptocurrency symbol (e.g., "BTC", "ETH")
-        intent_type: Type of intent (market_trend, price_reason, news_summary)
-        analysis_instructions: Instructions containing keywords and context
-
-    Returns:
-        Embedding vector for semantic search
-    """
-    # Generate query
-    query = generate_search_query_from_context.func(
-        coin_name=coin_name,
-        intent_type=intent_type,
-        analysis_instructions=analysis_instructions
-    )
-
-    # Generate embedding
-    embedding = generate_embedding.func(query)
-    print("embedding:", embedding)
-
-    return embedding
+        logger.error(f"semantic_search failed: {e}")
+        return []

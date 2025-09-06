@@ -6,9 +6,9 @@ from app.schemas.price import PriceData, PriceHourlyData
 
 
 class PlanResult(BaseModel):
-    """Result of executing a TaskPlan"""
+    """Result of executing a QueryPlan"""
 
-    intent_type: str = Field(description="Intent type from TaskPlan")
+    intent_type: str = Field(description="Intent type from QueryPlan")
 
     # Collected data by coin
     collected_coin_prices: Dict[str, List[PriceData]] = Field(
@@ -32,8 +32,9 @@ class PlanResult(BaseModel):
         description="List of coins that were queried"
     )
 
-    analysis_instructions: str = Field(
-        description="Instructions for how to analyze the collected data"
+    analysis_instructions: Optional[str] = Field(
+        default=None,
+        description="Instructions for how to analyze the collected data (optional)"
     )
 
     #semantice query:
@@ -66,7 +67,7 @@ class PlanResult(BaseModel):
                     {"title": "Bitcoin surges...", "similarity_score": 0.85}
                 ],
                 "coin_names": ["BTC"],
-                "analysis_instructions": "Analyze weekly trends...",
+                "analysis_instructions": None,
                 "total_actions": 2,
                 "successful_actions": 2,
                 "failed_actions": 0,

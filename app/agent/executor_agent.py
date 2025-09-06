@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Executor Agent - Executes TaskPlan by calling DB tools"""
+"""Executor Agent - Executes QueryPlan by calling DB tools"""
 import logging
 import os
 from pathlib import Path
@@ -9,33 +9,26 @@ import json
 
 from langchain_anthropic import ChatAnthropic
 
-from app.schemas.task_plan import TaskPlan
+from app.schemas.query_plan import QueryPlan
 from app.schemas.plan_result import PlanResult
 from app.schemas.vector_news import VectorNewsResult
 from app.schemas.price import PriceData, PriceHourlyData
-from app.tools.db_tools import (
-    search_news_by_semantic_query,
-    search_news_by_semantic_query_with_date,
-    get_price_by_hour_range,
-    get_price_by_oneday,
-    get_price_week_before,
-    get_price_week_after,
-    get_price_month_before,
-    get_price_month_after,
-    get_price_year,
-    get_all_price_by_coin,
-)
-from app.tools.vector_tools import embed_search_query
+from app.tools.price_tools import get_coin_price
+from app.tools.vector_tools import semantic_search
 
 logger = logging.getLogger(__name__)
 
 
 class ExecutorAgent:
     """
-    Executor Agent that executes TaskPlans by calling database tools.
+    Executor Agent that executes QueryPlans by calling database tools.
 
-    Takes a TaskPlan with action_plan and executes each tool call sequentially,
+    Takes a QueryPlan with query_plan and executes each tool call sequentially,
     collecting results for the response agent.
+
+    Available Tools:
+    - get_coin_price: 가격 데이터 조회
+    - semantic_search: 시맨틱 뉴스 검색 (query string으로 embedding 및 검색 통합)
     """
 
     _instance: Optional["ExecutorAgent"] = None
@@ -71,19 +64,12 @@ class ExecutorAgent:
             self.system_prompt = ""
             logger.warning("Executor system prompt not found")
 
-        # Register all DB tools
+        # Register DB tools
+        # - get_coin_price: 가격 데이터 조회
+        # - semantic_search: 시맨틱 뉴스 검색 (embedding 내부 처리)
         self.tools = [
-            search_news_by_semantic_query,
-            search_news_by_semantic_query_with_date,
-            get_price_by_hour_range,
-            get_price_by_oneday,
-            get_price_week_before,
-            get_price_week_after,
-            get_price_month_before,
-            get_price_month_after,
-            get_price_year,
-            get_all_price_by_coin,
-            embed_search_query,
+            get_coin_price,
+            semantic_search,
         ]
 
         # Bind tools to LLM
@@ -92,14 +78,14 @@ class ExecutorAgent:
         self._initialized = True
         logger.info("ExecutorAgent initialized with LLM and tools")
 
-    def do_plan(self, task_plan: TaskPlan) -> PlanResult:
+    def do_plan(self, query_plan: QueryPlan) -> PlanResult:
         """
-        Execute TaskPlan by having the agent call tools based on action_plan.
+        Execute QueryPlan by having the agent call tools based on query_plan.
 
-        :param task_plan: TaskPlan with action_plan and analysis_instructions
+        :param query_plan: QueryPlan with tool call specifications
         :return: PlanResult with structured collected data
         """
-        logger.info(f"Executing TaskPlan with {len(task_plan.action_plan)} actions")
+        logger.info(f"Executing QueryPlan with {len(query_plan.query_plan)} actions")
 
         # Collections for structured data
         collected_coin_prices: Dict[str, List[PriceData]] = defaultdict(list)
@@ -108,35 +94,31 @@ class ExecutorAgent:
         coin_names_set = set()
         errors: List[str] = []
 
-        total_actions = len(task_plan.action_plan)
+        total_actions = len(query_plan.query_plan)
         successful_actions = 0
         failed_actions = 0
 
-        # Build execution context with action plan
+        # Build execution context with query plan
         execution_context = {
-            "intent_type": task_plan.intent_type,
-            "analysis_instructions": task_plan.analysis_instructions,
-            "action_plan": [
+            "intent_type": query_plan.intent_type,
+            "pivot_time": query_plan.pivot_time,
+            "query_plan": [
                 {
                     "tool_name": tool_call.tool_name,
                     "arguments": tool_call.arguments
                 }
-                for tool_call in task_plan.action_plan
+                for tool_call in query_plan.query_plan
             ]
         }
 
         # Create agent message to execute the plan
         messages = [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": f"""Execute the following TaskPlan:
+            {"role": "user", "content": f"""Execute the following QueryPlan:
 
 {json.dumps(execution_context, indent=2, ensure_ascii=False)}
 
-Execute each tool in the action_plan sequentially.
-For semantic search tools requiring query_embedding:
-1. Use embed_search_query tool to generate embedding from analysis_instructions
-2. Then call the search tool with the generated embedding
-
+Execute each tool in the query_plan sequentially.
 Return all collected results."""}
         ]
 
@@ -188,21 +170,22 @@ Return all collected results."""}
                             successful_actions += 1
 
                             # Process result based on tool type
-                            if tool_name.startswith("search_news"):
+                            if tool_name == "semantic_search":
                                 # News search results - VectorNewsResult objects
                                 collected_news_chunks.extend(result)
 
-                            elif tool_name == "get_price_by_hour_range":
-                                # Hourly price data - PriceHourlyData objects
+                            elif tool_name == "get_coin_price":
+                                # 통합 가격 조회 tool 결과 처리
                                 coin_name = arguments.get("coin_name", "UNKNOWN")
+                                range_type = arguments.get("range_type", "week")
                                 coin_names_set.add(coin_name)
-                                collected_coin_hourly_prices[coin_name].extend(result)
 
-                            elif tool_name.startswith("get_price"):
-                                # Daily price data - PriceData objects
-                                coin_name = arguments.get("coin_name", "UNKNOWN")
-                                coin_names_set.add(coin_name)
-                                collected_coin_prices[coin_name].extend(result)
+                                if range_type == "hour":
+                                    # Hourly price data - PriceHourlyData objects
+                                    collected_coin_hourly_prices[coin_name].extend(result)
+                                else:
+                                    # Daily price data - PriceData objects
+                                    collected_coin_prices[coin_name].extend(result)
 
                             # Add tool result to messages for next iteration
                             tool_messages.append({
@@ -241,12 +224,11 @@ Return all collected results."""}
             failed_actions = total_actions
 
         return PlanResult(
-            intent_type=task_plan.intent_type,
+            intent_type=query_plan.intent_type,
             collected_coin_prices=dict(collected_coin_prices),
             collected_coin_hourly_prices=dict(collected_coin_hourly_prices),
             collected_news_chunks=collected_news_chunks,
             coin_names=sorted(list(coin_names_set)),
-            analysis_instructions=task_plan.analysis_instructions,
             total_actions=total_actions,
             successful_actions=successful_actions,
             failed_actions=failed_actions,

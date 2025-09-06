@@ -1,12 +1,13 @@
 """
 MongoDB 가격 데이터 저장소
 """
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Union, Literal
 from datetime import datetime, timedelta
 from pymongo.database import Database
 from pymongo.collection import Collection
 from app.config.mongodb_config import get_mongodb_client
 from app.schemas.price import PriceData, PriceHourlyData
+from app.schemas.price_query import RANGE_OFFSETS
 
 
 class PriceRepository:
@@ -38,6 +39,7 @@ class PriceRepository:
         print(f"✅ PriceRepository 초기화 완료 (DB: {self._database_name}, Collection: {self._collection_name})")
 
     def _get_daily_close_values(self, coin_name: str, date_start: str, date_end: str) -> List[PriceData]:
+        """일별 종가 데이터 조회 (내부 메서드)"""
         try:
             pipeline = [
                 {
@@ -80,17 +82,12 @@ class PriceRepository:
             print(f"❌ 날짜별 close 값 조회 실패: {e}")
             return []
 
-    def find_by_coin_name_with_hour_range(
-        self,
-        coin_name: str,
-        spot_time: int
-    ) -> List[PriceHourlyData]:
+    def _get_hourly_price_data(self, coin_name: str, pivot_time: int) -> List[PriceHourlyData]:
+        """시간별 가격 데이터 조회 (내부 메서드) - ±1시간"""
         try:
-            # 1시간 = 3600초
-            time_start = spot_time - 3600
-            time_end = spot_time + 3600
+            time_start = pivot_time - 3600
+            time_end = pivot_time + 3600
 
-            # 각 시간별 데이터 조회
             results = self.collection.find({
                 "coin_name": coin_name,
                 "price_date.time": {
@@ -99,7 +96,6 @@ class PriceRepository:
                 }
             }).sort("price_date.time", 1)
 
-            # 필요한 필드만 추출
             formatted_results = []
             for doc in results:
                 price_data = doc.get("price_date", {})
@@ -116,124 +112,57 @@ class PriceRepository:
             print(f"❌ 시간별 가격 조회 실패: {e}")
             return []
 
-    def find_by_coin_name_with_oneday(
+    # ==================== 통합 메서드 (Public) ====================
+
+    def find_by_range(
         self,
         coin_name: str,
-        pivot_date: int
-    ) -> List[PriceData]:
+        pivot_date: int,
+        range_type: Literal["hour", "day", "week", "month", "year"] = "week",
+        direction: Literal["before", "after", "both"] = "before"
+    ) -> Union[List[PriceData], List[PriceHourlyData]]:
+        """
+        통합 가격 조회 메서드
+
+        Args:
+            coin_name: 코인 심볼 (BTC, ETH 등)
+            pivot_date: 기준 날짜 (epoch timestamp)
+            range_type: 조회 범위 - hour, day, week, month, year
+            direction: 방향 - before(과거), after(미래), both(양방향)
+
+        Returns:
+            - range_type이 "hour"인 경우: List[PriceHourlyData]
+            - 그 외: List[PriceData]
+
+        Examples:
+            # BTC 7일 전 가격
+            find_by_range("BTC", 1727740800, "week", "before")
+
+            # ETH 1개월 양방향
+            find_by_range("ETH", 1727740800, "month", "both")
+        """
         try:
-            # pivot_date가 00:00:00인지 확인
-            pivot_dt = datetime.fromtimestamp(pivot_date)
-            if pivot_dt.hour != 0 or pivot_dt.minute != 0 or pivot_dt.second != 0:
-                raise ValueError(
-                    f"pivot_date는 00:00:00이어야 합니다. "
-                    f"현재: {pivot_dt.strftime('%Y-%m-%d %H:%M:%S')}"
-                )
+            # 시간별 데이터 조회 (±1시간)
+            if range_type == "hour":
+                return self._get_hourly_price_data(coin_name, pivot_date)
 
-            # epoch time을 날짜 문자열로 변환
-            date_str = pivot_dt.strftime("%Y-%m-%d")
+            # 일별 데이터 조회
+            offset = RANGE_OFFSETS.get(range_type, RANGE_OFFSETS["week"])
 
-            results = self._get_daily_close_values(coin_name, date_str, date_str)
-            return results
-        except ValueError:
-            raise
+            if direction == "before":
+                date_start = datetime.fromtimestamp(pivot_date - offset).strftime("%Y-%m-%d")
+                date_end = datetime.fromtimestamp(pivot_date).strftime("%Y-%m-%d")
+            elif direction == "after":
+                date_start = datetime.fromtimestamp(pivot_date).strftime("%Y-%m-%d")
+                date_end = datetime.fromtimestamp(pivot_date + offset).strftime("%Y-%m-%d")
+            else:  # both
+                date_start = datetime.fromtimestamp(pivot_date - offset).strftime("%Y-%m-%d")
+                date_end = datetime.fromtimestamp(pivot_date + offset).strftime("%Y-%m-%d")
+
+            return self._get_daily_close_values(coin_name, date_start, date_end)
+
         except Exception as e:
-            print(f"❌ 일별 가격 조회 실패: {e}")
-            return []
-
-    def find_by_coin_name_with_week_before(
-        self,
-        coin_name: str,
-        spot_date: int
-    ) -> List[PriceData]:
-        try:
-            date_start = datetime.fromtimestamp(spot_date - (7 * 24 * 60 * 60)).strftime("%Y-%m-%d")
-            date_end = datetime.fromtimestamp(spot_date).strftime("%Y-%m-%d")
-
-            results = self._get_daily_close_values(coin_name, date_start, date_end)
-            return results
-        except Exception as e:
-            print(f"❌ 주간 가격 조회 실패: {e}")
-            return []
-
-    def find_by_coin_name_with_week_after(
-        self,
-        coin_name: str,
-        spot_date: int
-    ) -> List[PriceData]:
-        try:
-            date_start = datetime.fromtimestamp(spot_date).strftime("%Y-%m-%d")
-            date_end = datetime.fromtimestamp(spot_date + (7 * 24 * 60 * 60)).strftime("%Y-%m-%d")
-
-            results = self._get_daily_close_values(coin_name, date_start, date_end)
-            return results
-        except Exception as e:
-            print(f"❌ 주간 가격 조회 실패: {e}")
-            return []
-
-    def find_by_coin_name_with_month_before(
-        self,
-        coin_name: str,
-        spot_date: int
-    ) -> List[PriceData]:
-        try:
-            date_start = datetime.fromtimestamp(spot_date - (30 * 24 * 60 * 60)).strftime("%Y-%m-%d")
-            date_end = datetime.fromtimestamp(spot_date).strftime("%Y-%m-%d")
-
-            results = self._get_daily_close_values(coin_name, date_start, date_end)
-            return results
-        except Exception as e:
-            print(f"❌ 월간 가격 조회 실패: {e}")
-            return []
-
-    def find_by_coin_name_with_month_after(
-        self,
-        coin_name: str,
-        spot_date: int
-    ) -> List[PriceData]:
-        try:
-            date_start = datetime.fromtimestamp(spot_date).strftime("%Y-%m-%d")
-            date_end = datetime.fromtimestamp(spot_date + (30 * 24 * 60 * 60)).strftime("%Y-%m-%d")
-
-            results = self._get_daily_close_values(coin_name, date_start, date_end)
-            return results
-        except Exception as e:
-            print(f"❌ 월간 가격 조회 실패: {e}")
-            return []
-
-    def find_by_coin_name_with_year(
-        self,
-        coin_name: str,
-        spot_date: int
-    ) -> List[PriceData]:
-        try:
-            date_start = datetime.fromtimestamp(spot_date - (365 * 24 * 60 * 60)).strftime("%Y-%m-%d")
-            date_end = datetime.fromtimestamp(spot_date).strftime("%Y-%m-%d")
-
-            results = self._get_daily_close_values(coin_name, date_start, date_end)
-            return results
-        except Exception as e:
-            print(f"❌ 연간 가격 조회 실패: {e}")
-            return []
-
-    def find_by_coin(
-        self,
-        coin_name: str,
-        limit: Optional[int] = None
-    ) -> List[PriceData]:
-        try:
-            # 전체 기간 조회 (매우 넓은 범위)
-            date_start = "2000-01-01"
-            date_end = datetime.now().strftime("%Y-%m-%d")
-
-            results = self._get_daily_close_values(coin_name, date_start, date_end)
-
-            if limit:
-                results = results[:limit]
-
-            return results
-        except Exception as e:
-            print(f"❌ 코인 데이터 조회 실패: {e}")
+            print(f"❌ 통합 가격 조회 실패: {e}")
             return []
 
 
