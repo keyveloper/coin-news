@@ -5,6 +5,18 @@ from pathlib import Path
 from typing import Dict, Optional
 from fastapi import HTTPException
 from langchain_anthropic import ChatAnthropic
+from app.schemas.task_plan import TaskPlan, ToolCall
+from datetime import datetime, timezone
+# Register DB tools
+from app.tools.db_tools import (
+    get_price_week_before,
+    get_price_week_after,
+    get_price_month_before,
+    get_price_month_after,
+)
+from app.tools.vector_tools import (
+    generate_search_query_from_context
+)
 
 
 class TaskPlanningAgent:
@@ -41,19 +53,10 @@ class TaskPlanningAgent:
         prompt_file = prompt_dir / "task_planning_agent_system_prompt"
         self.system_prompt = prompt_file.read_text(encoding="utf-8")
 
-        # Register DB tools
-        from app.tools.db_tools import (
-            search_news_by_semantic_query,
-            search_news_by_semantic_query_with_date,
-            get_price_week_before,
-            get_price_week_after,
-            get_price_month_before,
-            get_price_month_after,
-        )
+
 
         self.tools = [
-            search_news_by_semantic_query,
-            search_news_by_semantic_query_with_date,
+            generate_search_query_from_context,
             get_price_week_before,
             get_price_week_after,
             get_price_month_before,
@@ -74,7 +77,8 @@ class TaskPlanningAgent:
         :return: TaskPlan object with action_plan and analysis_instructions
         :raises: HTTPException if intent_type is "unknown"
         """
-        from app.schemas.task_plan import TaskPlan, ToolCall
+
+
         # Check for unknown intention
         if query_json.get("intent_type") == "unknown":
             raise HTTPException(
@@ -86,6 +90,23 @@ class TaskPlanningAgent:
                 }
             )
 
+        # Calculate pivot_time
+        pivot_time_str = query_json.get("time_range", {}).get("pivot_time")
+        if pivot_time_str == "today" or pivot_time_str is None:
+            # Get current date at 00:00:00
+            now = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            pivot_time = int(now.timestamp())
+        else:
+            # Parse date string (YYYYMMDD format expected)
+            try:
+                dt = datetime.strptime(str(pivot_time_str), "%Y%m%d")
+                dt = dt.replace(tzinfo=timezone.utc)
+                pivot_time = int(dt.timestamp())
+            except:
+                # Fallback to today
+                now = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+                pivot_time = int(now.timestamp())
+
         # Create messages for LLM
         messages = [
             {"role": "system", "content": self.system_prompt},
@@ -93,6 +114,9 @@ class TaskPlanningAgent:
 Generate a task execution plan for this normalized query:
 
 {json.dumps(query_json, indent=2, ensure_ascii=False)}
+
+**Calculated pivot_time**: {pivot_time} (epoch timestamp for today at 00:00:00)
+Use this pivot_time for all spot_date/pivot_date arguments in your tool calls.
 
 Based on the intent_type, call the appropriate tools to create an execution plan.
 After calling tools, provide analysis instructions for how to process the results.
@@ -133,6 +157,7 @@ After calling tools, provide analysis instructions for how to process the result
         # Return TaskPlan object
         return TaskPlan(
             intent_type=query_json["intent_type"],
+            pivot_time=pivot_time,
             action_plan=action_plan,
             analysis_instructions=analysis_instructions
         )
