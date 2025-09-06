@@ -4,6 +4,7 @@ ChromaDB 데이터베이스 작업 유틸리티
 from typing import List, Dict, Optional
 from datetime import datetime
 from app.config.chroma_config import get_chroma_client
+from app.schemas.vector_news import VectorNewsResult, VectorNewsBasic
 
 
 class NewsRepository:
@@ -71,7 +72,7 @@ class NewsRepository:
         query_embedding: List[float],
         tok_k: int,
         similarity_threshold: float,
-    ) -> List[Dict]:
+    ) -> List[VectorNewsResult]:
         try:
             # ChromaDB의 query 메서드로 벡터 검색
             results = self.collection.query(
@@ -90,14 +91,14 @@ class NewsRepository:
 
                     # similarity_threshold 필터링
                     if similarity_score is not None and similarity_score >= similarity_threshold:
-                        search_results.append({
-                            'title': metadata.get('title'),
-                            'url': metadata.get('url'),
-                            'created_at': metadata.get('created_at'),
-                            'distance': distance,
-                            'similarity_score': similarity_score,
-                            'document': results['documents'][0][idx] if results.get('documents') else None
-                        })
+                        search_results.append(VectorNewsResult(
+                            title=metadata.get('title'),
+                            url=metadata.get('url'),
+                            created_at=metadata.get('created_at'),
+                            distance=distance,
+                            similarity_score=similarity_score,
+                            document=results['documents'][0][idx] if results.get('documents') else None
+                        ))
 
             return search_results
         except Exception as e:
@@ -110,7 +111,7 @@ class NewsRepository:
         tok_k: int,
         similarity_threshold: float,
         pivot_date: int
-    ) -> List[Dict]:
+    ) -> List[VectorNewsResult]:
         try:
             # pivot_date가 00:00:00인지 확인
             pivot_dt = datetime.fromtimestamp(pivot_date)
@@ -147,17 +148,17 @@ class NewsRepository:
 
                     # similarity_threshold 필터링
                     if similarity_score is not None and similarity_score >= similarity_threshold:
-                        search_results.append({
-                            'title': metadata.get('title'),
-                            'link': metadata.get('link'),
-                            'publish_date': metadata.get('publish_date'),
-                            'publish_date_readable': metadata.get('publish_date_readable'),
-                            'source': metadata.get('source'),
-                            'query': metadata.get('query'),
-                            'distance': distance,
-                            'similarity_score': similarity_score,
-                            'document': results['documents'][0][idx] if results.get('documents') else None
-                        })
+                        search_results.append(VectorNewsResult(
+                            title=metadata.get('title'),
+                            link=metadata.get('link'),
+                            publish_date=metadata.get('publish_date'),
+                            publish_date_readable=metadata.get('publish_date_readable'),
+                            source=metadata.get('source'),
+                            query=metadata.get('query'),
+                            distance=distance,
+                            similarity_score=similarity_score,
+                            document=results['documents'][0][idx] if results.get('documents') else None
+                        ))
 
             return search_results
         except ValueError as ve:
@@ -167,7 +168,7 @@ class NewsRepository:
             print(f"❌ 임베딩 검색 실패: {e}")
             return []
 
-    def find_all_news(self, limit: Optional[int] = None) -> List[Dict]:
+    def find_all_news(self, limit: Optional[int] = None) -> List[VectorNewsBasic]:
         try:
             count = self.collection.count()
             if count == 0:
@@ -180,11 +181,11 @@ class NewsRepository:
             news_list = []
             if results['metadatas']:
                 for metadata in results['metadatas']:
-                    news_list.append({
-                        'title': metadata.get('title'),
-                        'url': metadata.get('url'),
-                        'created_at': metadata.get('created_at')
-                    })
+                    news_list.append(VectorNewsBasic(
+                        title=metadata.get('title'),
+                        url=metadata.get('url'),
+                        created_at=metadata.get('created_at')
+                    ))
 
             return news_list
         except Exception as e:
