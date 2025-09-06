@@ -2,7 +2,7 @@
 import logging
 from typing import List
 from langchain.tools import tool
-from sentence_transformers import SentenceTransformer
+from langchain_openai import OpenAIEmbeddings
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,9 @@ def _get_embedding_model():
     global _embedding_model
     if _embedding_model is None:
         try:
-            _embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+            _embedding_model = OpenAIEmbeddings(
+                model="text-embedding-3-small"
+            )
             logger.info("Embedding model initialized")
         except Exception as e:
             logger.error(f"Failed to initialize embedding model: {e}")
@@ -26,18 +28,19 @@ def _get_embedding_model():
 @tool
 def generate_embedding(text: str) -> List[float]:
     """
-    Generate embedding vector from text for semantic search.
+    Generate embedding vector from text for semantic search using OpenI.
 
     Args:
         text: Text to convert to embedding vector
 
     Returns:
-        List of floats representing the embedding vector
+        List of floats representing the embedding vector (1536 dimensions for text-embedding-3-small)
     """
     try:
         model = _get_embedding_model()
-        embedding = model.encode(text, convert_to_numpy=True)
-        return embedding.tolist()
+        # OpenAIEmbeddings uses embed_query method, not encode
+        embedding = model.embed_query(text)
+        return embedding
     except Exception as e:
         logger.error(f"Error generating embedding: {e}")
         raise
@@ -131,5 +134,6 @@ def embed_search_query(
 
     # Generate embedding
     embedding = generate_embedding.func(query)
+    print("embedding:", embedding)
 
     return embedding

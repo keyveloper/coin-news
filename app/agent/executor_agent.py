@@ -10,7 +10,9 @@ import json
 from langchain_anthropic import ChatAnthropic
 
 from app.schemas.task_plan import TaskPlan
-from app.schemas.plan_result import PlanResult, NewsChunk, CoinPrice
+from app.schemas.plan_result import PlanResult
+from app.schemas.vector_news import VectorNewsResult
+from app.schemas.price import PriceData, PriceHourlyData
 from app.tools.db_tools import (
     search_news_by_semantic_query,
     search_news_by_semantic_query_with_date,
@@ -100,8 +102,9 @@ class ExecutorAgent:
         logger.info(f"Executing TaskPlan with {len(task_plan.action_plan)} actions")
 
         # Collections for structured data
-        collected_coin_prices: Dict[str, List[CoinPrice]] = defaultdict(list)
-        collected_news_chunks: List[NewsChunk] = []
+        collected_coin_prices: Dict[str, List[PriceData]] = defaultdict(list)
+        collected_coin_hourly_prices: Dict[str, List[PriceHourlyData]] = defaultdict(list)
+        collected_news_chunks: List[VectorNewsResult] = []
         coin_names_set = set()
         errors: List[str] = []
 
@@ -186,31 +189,20 @@ Return all collected results."""}
 
                             # Process result based on tool type
                             if tool_name.startswith("search_news"):
-                                # News search results
-                                for item in result:
-                                    collected_news_chunks.append(NewsChunk(
-                                        title=item.get("title"),
-                                        content=item.get("content") or item.get("text"),
-                                        published_date=item.get("published_date") or item.get("date"),
-                                        url=item.get("url") or item.get("link"),
-                                        similarity_score=item.get("similarity_score") or item.get("score")
-                                    ))
+                                # News search results - VectorNewsResult objects
+                                collected_news_chunks.extend(result)
 
-                            elif tool_name.startswith("get_price"):
-                                # Price data results
+                            elif tool_name == "get_price_by_hour_range":
+                                # Hourly price data - PriceHourlyData objects
                                 coin_name = arguments.get("coin_name", "UNKNOWN")
                                 coin_names_set.add(coin_name)
+                                collected_coin_hourly_prices[coin_name].extend(result)
 
-                                for item in result:
-                                    collected_coin_prices[coin_name].append(CoinPrice(
-                                        timestamp=item.get("timestamp") or item.get("time", 0),
-                                        date=item.get("date"),
-                                        open=item.get("open"),
-                                        high=item.get("high"),
-                                        low=item.get("low"),
-                                        close=item.get("close", 0.0),
-                                        volume=item.get("volume")
-                                    ))
+                            elif tool_name.startswith("get_price"):
+                                # Daily price data - PriceData objects
+                                coin_name = arguments.get("coin_name", "UNKNOWN")
+                                coin_names_set.add(coin_name)
+                                collected_coin_prices[coin_name].extend(result)
 
                             # Add tool result to messages for next iteration
                             tool_messages.append({
@@ -251,6 +243,7 @@ Return all collected results."""}
         return PlanResult(
             intent_type=task_plan.intent_type,
             collected_coin_prices=dict(collected_coin_prices),
+            collected_coin_hourly_prices=dict(collected_coin_hourly_prices),
             collected_news_chunks=collected_news_chunks,
             coin_names=sorted(list(coin_names_set)),
             analysis_instructions=task_plan.analysis_instructions,

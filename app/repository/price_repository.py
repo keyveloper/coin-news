@@ -21,19 +21,21 @@ class PriceRepository:
 
     def __init__(self):
         # 이미 초기화된 경우 중복 초기화 방지
-        if not hasattr(self, '_initialized'):
-            self._initialized = True
+        if hasattr(self, '_initialized') and self._initialized:
+            return
 
-            # 데이터베이스 및 컬렉션 이름 설정
-            self._database_name = "local"
-            self._collection_name = "price.log"
+        self._initialized = True
 
-            # MongoDB 클라이언트 연결
-            self.mongo_client = get_mongodb_client()
-            self.db: Database = self.mongo_client.get_database(self._database_name)
-            self.collection: Collection = self.db[self._collection_name]
+        # 데이터베이스 및 컬렉션 이름 설정
+        self._database_name = "local"
+        self._collection_name = "price.log"
 
-            print(f"✅ PriceRepository 초기화 완료 (DB: {self._database_name}, Collection: {self._collection_name})")
+        # MongoDB 클라이언트 연결
+        self.mongo_client = get_mongodb_client()
+        self.db: Database = self.mongo_client.get_database(self._database_name)
+        self.collection: Collection = self.db[self._collection_name]
+
+        print(f"✅ PriceRepository 초기화 완료 (DB: {self._database_name}, Collection: {self._collection_name})")
 
     def _get_daily_close_values(self, coin_name: str, date_start: str, date_end: str) -> List[PriceData]:
         try:
