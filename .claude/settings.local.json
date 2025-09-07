@@ -13,7 +13,13 @@
       "Bash(del \"C:\\\\Users\\\\dideh\\\\Desktop\\\\lang\\\\coin-news\\\\app\\\\schemas\\\\task_plan.py\")",
       "Bash(del \"C:\\\\Users\\\\dideh\\\\Desktop\\\\lang\\\\coin-news\\\\app\\\\prompt\\\\task_planning_agent_system_prompt\")",
       "Bash(timeout:*)",
-      "Bash(ping:*)"
+      "Bash(ping:*)",
+      "Bash(echo:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(xargs:*)",
+      "Bash(tasklist:*)"
     ],
     "deny": [],
     "ask": []

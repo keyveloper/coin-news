@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Agent Router - Independent endpoints for each agent"""
+import os
 import logging
 from fastapi import APIRouter, Query, HTTPException, Depends
 
@@ -63,6 +64,10 @@ def create_query_plan(
     - Output: QueryPlan (query_plan with mapped tool calls)
     """
     try:
+        # Debug: 환경변수 확인
+        logger.info(f"[LangSmith] LANGCHAIN_TRACING_V2={os.getenv('LANGCHAIN_TRACING_V2')}")
+        logger.info(f"[LangSmith] LANGCHAIN_PROJECT={os.getenv('LANGCHAIN_PROJECT')}")
+
         # Step 1: Analyze query
         logger.info(f"[QueryPlanner] Input: {query}")
         normalized_query = query_analyzer.analyze_query(query)
@@ -77,7 +82,12 @@ def create_query_plan(
             "agent": "query_planner",
             "input": query,
             "normalized_query": normalized_query,
-            "output": query_plan.model_dump()
+            "output": query_plan.model_dump(),
+            "_debug_langsmith": {
+                "LANGCHAIN_TRACING_V2": os.getenv("LANGCHAIN_TRACING_V2"),
+                "LANGCHAIN_PROJECT": os.getenv("LANGCHAIN_PROJECT"),
+                "LANGCHAIN_API_KEY_SET": bool(os.getenv("LANGCHAIN_API_KEY"))
+            }
         }
     except HTTPException:
         raise
@@ -236,3 +246,15 @@ def run_full_chain(
     except Exception as e:
         logger.error(f"[Chain] Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Chain execution failed: {str(e)}")
+
+
+# ==================== Debug ====================
+
+@agent_router.get("/debug/langsmith")
+def debug_langsmith():
+    """LangSmith 환경변수 확인"""
+    return {
+        "LANGCHAIN_TRACING_V2": os.getenv("LANGCHAIN_TRACING_V2"),
+        "LANGCHAIN_PROJECT": os.getenv("LANGCHAIN_PROJECT"),
+        "LANGCHAIN_API_KEY": os.getenv("LANGCHAIN_API_KEY", "")[:25] + "..." if os.getenv("LANGCHAIN_API_KEY") else None
+    }

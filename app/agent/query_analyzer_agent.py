@@ -1,6 +1,7 @@
 """Query Analyzer Service - Extract intent, date, coin, event from user queries using Claude"""
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, cast, Any
 from anthropic import Anthropic
@@ -54,8 +55,8 @@ class QueryAnalyzerService:
 
         try:
             with open(prompt_path, 'r', encoding='utf-8') as f:
-                self.system_prompt = f.read().strip()
-                self.logger.info(f"Loaded system prompt: {len(self.system_prompt)} characters")
+                self.system_prompt_template = f.read().strip()
+                self.logger.info(f"Loaded system prompt template: {len(self.system_prompt_template)} characters")
         except Exception as e:
             self.logger.error(f"Error loading prompt file: {e}")
             raise
@@ -68,6 +69,19 @@ class QueryAnalyzerService:
 
         self._initialized = True
         self.logger.info(f"QueryAnalyzerService initialized with model: {self.model_name}")
+
+    def _get_formatted_system_prompt(self) -> str:
+        """현재 날짜 정보를 시스템 프롬프트에 주입"""
+        now = datetime.now()
+        current_date = now.strftime("%Y-%m-%d")
+        current_year = now.year
+        last_year = now.year - 1
+
+        return self.system_prompt_template.format(
+            current_date=current_date,
+            current_year=current_year,
+            last_year=last_year
+        )
 
     @traceable(name="QueryAnalyzer.analyze_query", run_type="chain")
     def analyze_query(self, query: str) -> Dict:
@@ -93,11 +107,15 @@ class QueryAnalyzerService:
             "input_schema": cast(Any, NormalizedQuery.model_json_schema()),
         }
 
+        # 현재 날짜 정보를 포함한 시스템 프롬프트
+        formatted_prompt = self._get_formatted_system_prompt()
+        self.logger.info(f"[DATE DEBUG] Using current_date: {datetime.now().strftime('%Y-%m-%d')}, current_year: {datetime.now().year}")
+
         message = self.client.messages.create(
             model=self.model_name,
             max_tokens=self.max_tokens,
             temperature=self.temperature,
-            system=self.system_prompt,
+            system=formatted_prompt,
             messages=messages,
             tools=[tool_schema],
             tool_choice={"type": "tool", "name": "analyze_query"}  # type: ignore

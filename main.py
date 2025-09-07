@@ -1,16 +1,14 @@
 import os
-from fastapi import FastAPI
+
+# 환경변수 먼저 로드 (LangChain import 전에!)
 from dotenv import load_dotenv
+load_dotenv(override=True)
 
-load_dotenv()
+# LangChain이 import되기 전에 환경변수 확인
+print(f"[Startup] LANGCHAIN_TRACING_V2: {os.getenv('LANGCHAIN_TRACING_V2')}")
+print(f"[Startup] LANGCHAIN_PROJECT: {os.getenv('LANGCHAIN_PROJECT')}")
 
-# LangSmith 환경변수 직접 설정 (dotenv 로드 후)
-if os.getenv("LANGSMITH_TRACING", "").lower() == "true":
-    os.environ["LANGCHAIN_TRACING_V2"] = "true"
-    os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
-    os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "default")
-    print(f"[LangSmith] Tracing enabled - Project: {os.getenv('LANGCHAIN_PROJECT')}")
-
+from fastapi import FastAPI
 from app.api.routers import api_router
 
 app = FastAPI(
@@ -35,3 +33,13 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+
+# Debug: 환경변수 확인용
+@app.get("/debug/env")
+async def debug_env():
+    return {
+        "LANGCHAIN_TRACING_V2": os.getenv("LANGCHAIN_TRACING_V2"),
+        "LANGCHAIN_PROJECT": os.getenv("LANGCHAIN_PROJECT"),
+        "LANGCHAIN_API_KEY": os.getenv("LANGCHAIN_API_KEY", "")[:20] + "..." if os.getenv("LANGCHAIN_API_KEY") else None
+    }
