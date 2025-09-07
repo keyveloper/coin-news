@@ -1,6 +1,5 @@
 """
-Database operations module
+Config module - configuration settings
 """
-from app.repository.news_repository import ChromaNewsDB
 
-__all__ = ['ChromaNewsDB']
+__all__ = []

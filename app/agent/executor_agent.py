@@ -8,13 +8,14 @@ from collections import defaultdict
 import json
 
 from langchain_anthropic import ChatAnthropic
+from langsmith import traceable
 
 from app.schemas.query_plan import QueryPlan
 from app.schemas.plan_result import PlanResult
 from app.schemas.vector_news import VectorNewsResult
 from app.schemas.price import PriceData, PriceHourlyData
 from app.tools.price_tools import get_coin_price
-from app.tools.vector_tools import semantic_search
+from app.tools.vector_tools import make_semantic_query, semantic_search
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,8 @@ class ExecutorAgent:
 
     Available Tools:
     - get_coin_price: 가격 데이터 조회
-    - semantic_search: 시맨틱 뉴스 검색 (query string으로 embedding 및 검색 통합)
+    - make_semantic_query: 시맨틱 쿼리 생성
+    - semantic_search: 시맨틱 뉴스 검색
     """
 
     _instance: Optional["ExecutorAgent"] = None
@@ -66,9 +68,11 @@ class ExecutorAgent:
 
         # Register DB tools
         # - get_coin_price: 가격 데이터 조회
+        # - make_semantic_query: 시맨틱 쿼리 생성
         # - semantic_search: 시맨틱 뉴스 검색 (embedding 내부 처리)
         self.tools = [
             get_coin_price,
+            make_semantic_query,
             semantic_search,
         ]
 
@@ -78,9 +82,15 @@ class ExecutorAgent:
         self._initialized = True
         logger.info("ExecutorAgent initialized with LLM and tools")
 
+    @traceable(name="Executor.do_plan", run_type="chain")
     def do_plan(self, query_plan: QueryPlan) -> PlanResult:
         """
         Execute QueryPlan by having the agent call tools based on query_plan.
+
+        LangSmith에서 추적:
+        - Input: QueryPlan (tool_name, arguments 리스트)
+        - Output: PlanResult (prices, news, execution stats)
+        - 각 tool 호출 결과 확인 가능
 
         :param query_plan: QueryPlan with tool call specifications
         :return: PlanResult with structured collected data

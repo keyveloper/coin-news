@@ -11,7 +11,9 @@
       "Bash(curl:*)",
       "Bash(del \"C:\\\\Users\\\\dideh\\\\Desktop\\\\lang\\\\coin-news\\\\app\\\\agent\\\\task_planning_agent.py\")",
       "Bash(del \"C:\\\\Users\\\\dideh\\\\Desktop\\\\lang\\\\coin-news\\\\app\\\\schemas\\\\task_plan.py\")",
-      "Bash(del \"C:\\\\Users\\\\dideh\\\\Desktop\\\\lang\\\\coin-news\\\\app\\\\prompt\\\\task_planning_agent_system_prompt\")"
+      "Bash(del \"C:\\\\Users\\\\dideh\\\\Desktop\\\\lang\\\\coin-news\\\\app\\\\prompt\\\\task_planning_agent_system_prompt\")",
+      "Bash(timeout:*)",
+      "Bash(ping:*)"
     ],
     "deny": [],
     "ask": []

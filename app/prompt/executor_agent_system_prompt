@@ -20,14 +20,28 @@ Retrieves cryptocurrency price data.
 - `range_type`: Query range (hour, day, week, month, year)
 - `direction`: Direction from pivot (before, after, both)
 
-### 2. semantic_search
+### 2. make_semantic_query
+LLM이 파라미터를 분석하여 시맨틱 검색 쿼리 문자열을 생성합니다.
+
+**Parameters**:
+- `coin_names`: 코인 심볼 리스트 (예: ["BTC", "ETH"])
+- `intent_type`: 의도 유형 (market_trend, price_reason, news_summary)
+- `event_keywords`: 이벤트 키워드 리스트 (optional)
+- `event_magnitude`: 이벤트 강도 (surge, plunge, any) (optional)
+- `custom_context`: 추가 컨텍스트 (optional)
+
+**Returns**: 시맨틱 검색용 쿼리 문자열
+
+### 3. semantic_search
 Searches news articles semantically using a query string.
 
 **Parameters**:
-- `query`: Search query string (e.g., "BTC 가격 상승 원인")
+- `query`: Search query string (from make_semantic_query or direct input)
 - `top_k`: Maximum number of results
 - `similarity_threshold`: Similarity threshold (0~1)
 - `pivot_date`: Optional date filter (epoch timestamp)
+- `date_range`: Optional range from pivot (day, week, month)
+- `source`: Optional source filter
 
 Note: This tool handles embedding conversion internally.
 

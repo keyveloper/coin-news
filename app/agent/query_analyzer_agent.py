@@ -3,9 +3,9 @@ import logging
 import os
 from pathlib import Path
 from typing import Dict, Optional, cast, Any
-
 from anthropic import Anthropic
 from anthropic.types import MessageParam, ToolParam
+from langsmith import traceable
 
 from app.schemas.normalized_query import NormalizedQuery
 
@@ -69,7 +69,15 @@ class QueryAnalyzerService:
         self._initialized = True
         self.logger.info(f"QueryAnalyzerService initialized with model: {self.model_name}")
 
+    @traceable(name="QueryAnalyzer.analyze_query", run_type="chain")
     def analyze_query(self, query: str) -> Dict:
+        """
+        사용자 쿼리를 분석하여 NormalizedQuery로 변환
+
+        LangSmith에서 추적:
+        - Input: 원본 쿼리
+        - Output: NormalizedQuery (intent_type, target, time_range 등)
+        """
         self.logger.info(f"Analyzing query: {query}")
 
         if len(query) > self.max_query_length:
