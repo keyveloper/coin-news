@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query, HTTPException, Depends
 from app.agent.query_analyzer_agent import QueryAnalyzerService
 from app.agent.query_planning_agent import QueryPlanningAgent
 from app.agent.executor_agent import ExecutorAgent
+from app.agent.script_agent import ScriptAgent
 from app.schemas.normalized_query import NormalizedQuery
 from app.schemas.query_plan import QueryPlan
 
@@ -155,7 +156,7 @@ def execute_plan(
         logger.info(f"[Executor] Executing {len(query_plan.query_plan)} tool calls")
 
         # Step 3: Execute plan
-        plan_result = executor.do_plan(query_plan)
+        plan_result = executor.do_plan(query_plan, original_query=query)
         logger.info(f"[Executor] Result: {plan_result.successful_actions}/{plan_result.total_actions} successful")
 
         return {
@@ -176,6 +177,7 @@ def execute_plan(
 @agent_router.post("/execute/from-plan")
 def execute_from_plan(
     query_plan: QueryPlan,
+    original_query: str = Query("", description="Original user query for context"),
     executor: ExecutorAgent = Depends(ExecutorAgent)
 ):
     """
@@ -189,7 +191,7 @@ def execute_from_plan(
     try:
         logger.info(f"[Executor] Direct QueryPlan input with {len(query_plan.query_plan)} tool calls")
 
-        plan_result = executor.do_plan(query_plan)
+        plan_result = executor.do_plan(query_plan, original_query=original_query)
         logger.info(f"[Executor] Result: {plan_result.successful_actions}/{plan_result.total_actions} successful")
 
         return {
@@ -210,26 +212,34 @@ def run_full_chain(
     query: str = Query(..., description="Natural language query to process"),
     query_analyzer: QueryAnalyzerService = Depends(QueryAnalyzerService),
     query_planner: QueryPlanningAgent = Depends(QueryPlanningAgent),
-    executor: ExecutorAgent = Depends(ExecutorAgent)
+    executor: ExecutorAgent = Depends(ExecutorAgent),
+    script_agent: ScriptAgent = Depends(ScriptAgent)
 ):
     """
     [Full Chain] All Agents in sequence
 
-    Runs complete pipeline: QueryAnalyzer -> QueryPlanner -> Executor
+    Runs complete pipeline: QueryAnalyzer -> QueryPlanner -> Executor -> ScriptAgent
 
-    Returns all intermediate results for debugging.
+    Returns all intermediate results and final script.
     """
     try:
         logger.info(f"[Chain] Starting full chain for: {query}")
 
         # Layer 1: Query Analysis
+        logger.info("[Chain] Layer 1: Query Analysis")
         normalized_query = query_analyzer.analyze_query(query)
 
         # Layer 2: Query Planning
+        logger.info("[Chain] Layer 2: Query Planning")
         query_plan = query_planner.make_plan(normalized_query)
 
         # Layer 3: Execution
-        plan_result = executor.do_plan(query_plan)
+        logger.info(f"[Chain] Layer 3: Executing {len(query_plan.query_plan)} tool calls")
+        plan_result = executor.do_plan(query_plan, original_query=query)
+
+        # Layer 4: Script Generation
+        logger.info("[Chain] Layer 4: Script Generation")
+        final_script = script_agent.generate(plan_result)
 
         logger.info(f"[Chain] Completed: {plan_result.successful_actions}/{plan_result.total_actions}")
 
@@ -239,7 +249,8 @@ def run_full_chain(
             "input": query,
             "layer_1_query_analyzer": normalized_query,
             "layer_2_query_planner": query_plan.model_dump(),
-            "layer_3_executor": plan_result.model_dump()
+            "layer_3_executor": plan_result.model_dump(),
+            "layer_4_script": final_script
         }
     except HTTPException:
         raise

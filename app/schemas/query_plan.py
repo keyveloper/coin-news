@@ -55,3 +55,27 @@ class QueryPlan(BaseModel):
                 ]
             }
         }
+
+
+
+class GetCoinPriceArgs(BaseModel):
+    """가격 데이터 조회 도구 인자"""
+    coin_name: str = Field(description="코인 심볼 (BTC, ETH 등)")
+    range_type: str = Field(description="조회 범위: day, week, month, year")
+    direction: str = Field(description="조회 방향: before, after, both")
+
+
+class SemanticQueryArgs(BaseModel):
+    """시맨틱 검색 쿼리 도구 인자"""
+    search_perspective: str = Field(description="검색 관점 (예: 가격변동원인, 시장환경, 호재분석, 규제정책, 기술요인)")
+    event_keywords: List[str] = Field(description="검색 키워드 리스트")
+    search_depth: str = Field(description="검색 깊이: short, medium, deep")
+
+
+class QueryPlanOutput(BaseModel):
+    """QueryPlan 생성 도구 출력"""
+    include_price_data: bool = Field(description="가격 데이터 조회 포함 여부")
+    price_range_type: Optional[str] = Field(default="month", description="가격 조회 범위")
+    price_direction: Optional[str] = Field(default="both", description="가격 조회 방향")
+    semantic_queries: List[SemanticQueryArgs] = Field(description="시맨틱 검색 쿼리 리스트 (3-5개)")
+
