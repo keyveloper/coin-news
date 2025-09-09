@@ -9,6 +9,7 @@ print(f"[Startup] LANGCHAIN_TRACING_V2: {os.getenv('LANGCHAIN_TRACING_V2')}")
 print(f"[Startup] LANGCHAIN_PROJECT: {os.getenv('LANGCHAIN_PROJECT')}")
 
 from fastapi import FastAPI
+from chainlit.utils import mount_chainlit
 from app.api.routers import api_router
 
 app = FastAPI(
@@ -19,6 +20,9 @@ app = FastAPI(
 
 # API 라우터 등록
 app.include_router(api_router)
+
+# Chainlit 마운트 (/chat 경로)
+mount_chainlit(app=app, target="cl_app.py", path="/chat")
 
 
 @app.get("/")

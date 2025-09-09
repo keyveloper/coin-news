@@ -20,3 +20,5 @@ pymongo==4.6.1
 newspaper3k==0.2.8
 lxml_html_clean==0.4.3
 openai==1.12.0
+redis==7.1.0
+chainlit==2.9.3

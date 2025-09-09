@@ -66,7 +66,7 @@ class QueryAnalyzerAgent:
         )
 
     @traceable(name="QueryAnalyzer.analyze", run_type="llm")
-    def analyze_query(self, query: str) -> Dict:
+    def analyze(self, query: str) -> Dict:
         """
         사용자 쿼리를 분석하여 NormalizedQuery로 변환
 
