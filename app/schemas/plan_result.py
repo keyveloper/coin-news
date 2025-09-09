@@ -1,46 +1,54 @@
-"""Plan Result Schema for Executor Agent"""
-from typing import Any, Dict, List, Optional
+"""Plan Result Schema for Executor Agent
+
+역할: 가격 데이터 분석/요약, 뉴스 데이터 수집/요약 후 다음 레이어에 전달
+- Raw 데이터는 전달하지 않고 요약만 전달
+"""
+from typing import List, Optional
 from pydantic import BaseModel, Field
-from app.schemas.vector_news import VectorNewsResult
-from app.schemas.price import PriceData, PriceHourlyData
 
 
 class PlanResult(BaseModel):
-    """Result of executing a QueryPlan"""
+    """Result of executing a QueryPlan - 다음 레이어로 전달되는 요약 결과"""
 
-    intent_type: str = Field(description="Intent type from QueryPlan")
-
-    # Collected data by coin
-    collected_coin_prices: Dict[str, List[PriceData]] = Field(
-        default_factory=dict,
-        description="Daily price data collected per coin. Key: coin_name (e.g., 'BTC'), Value: list of PriceData"
+    # 원본 쿼리 (QueryPlanningAgent 검증용)
+    original_query: str = Field(
+        description="User's original query for verification"
     )
 
-    collected_coin_hourly_prices: Dict[str, List[PriceHourlyData]] = Field(
-        default_factory=dict,
-        description="Hourly price data collected per coin. Key: coin_name (e.g., 'BTC'), Value: list of PriceHourlyData"
+    intent_type: str = Field(
+        description="Intent type from QueryPlan (price_reason, market_trend, news_summary)"
     )
 
-    collected_news_chunks: List[VectorNewsResult] = Field(
-        default_factory=list,
-        description="News articles collected from semantic searches"
-    )
-
-    # Metadata
+    # 대상 코인
     coin_names: List[str] = Field(
         default_factory=list,
-        description="List of coins that were queried"
+        description="List of coins that were analyzed"
     )
 
-    analysis_instructions: Optional[str] = Field(
+    # LLM 생성 요약 (다음 레이어로 전달)
+    price_summary: Optional[str] = Field(
         default=None,
-        description="Instructions for how to analyze the collected data (optional)"
+        description="LLM-generated summary of price data analysis"
     )
 
-    #semantice query:
+    news_summary: Optional[str] = Field(
+        default=None,
+        description="LLM-generated summary of collected news"
+    )
 
-    # Execution statistics
-    total_actions: int = Field(description="Total number of tool calls")
+    combined_summary: Optional[str] = Field(
+        default=None,
+        description="LLM-generated combined analysis of price and news"
+    )
+
+    # 추가 생성 쿼리 (뉴스에서 추출)
+    generated_queries: List[str] = Field(
+        default_factory=list,
+        description="Additional queries extracted from news for further search"
+    )
+
+    # 실행 통계
+    total_actions: int = Field(description="Total number of tool calls executed")
     successful_actions: int = Field(description="Number of successful tool calls")
     failed_actions: int = Field(description="Number of failed tool calls")
 
@@ -52,24 +60,15 @@ class PlanResult(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "intent_type": "market_trend",
-                "collected_coin_prices": {
-                    "BTC": [
-                        {"date": "2024-12-01", "close": 42000.5, "time": 1733011200}
-                    ]
-                },
-                "collected_coin_hourly_prices": {
-                    "BTC": [
-                        {"time": 1733011200, "high": 42500.0, "low": 41800.0, "open": 42100.0, "close": 42300.0}
-                    ]
-                },
-                "collected_news_chunks": [
-                    {"title": "Bitcoin surges...", "similarity_score": 0.85}
-                ],
+                "original_query": "10월 중순 비트코인 급등 원인",
+                "intent_type": "price_reason",
                 "coin_names": ["BTC"],
-                "analysis_instructions": None,
-                "total_actions": 2,
-                "successful_actions": 2,
+                "price_summary": "BTC 10월 +15% 상승. 주요 저항선 $70,000 돌파...",
+                "news_summary": "[주요 이슈] ETF 승인 임박 + 기관투자 유입...",
+                "combined_summary": "[종합 분석] 가격 상승과 ETF 뉴스 상관관계...",
+                "generated_queries": ["BTC ETF SEC", "비트코인 기관투자"],
+                "total_actions": 6,
+                "successful_actions": 6,
                 "failed_actions": 0,
                 "errors": []
             }

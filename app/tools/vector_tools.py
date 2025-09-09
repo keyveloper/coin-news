@@ -157,7 +157,7 @@ def make_semantic_query(
 def semantic_search(
     query: str,
     top_k: int = 10,
-    similarity_threshold: float = 0.7,
+    similarity_threshold: float = 0.0,
     pivot_date: Optional[int] = None,
     date_range: Optional[Literal["day", "week", "month"]] = None,
     source: Optional[str] = None
@@ -170,7 +170,7 @@ def semantic_search(
     Args:
         query: 검색할 쿼리 문자열 (make_semantic_query 결과 또는 직접 입력)
         top_k: 반환할 최대 결과 개수 (기본값: 10)
-        similarity_threshold: 유사도 임계값 0~1 (기본값: 0.7)
+        similarity_threshold: 유사도 임계값 (기본값: 0.0). L2 distance 사용시 낮은 값 권장
         pivot_date: 기준 날짜 (epoch timestamp, 00:00:00). None이면 날짜 필터 없음
         date_range: 날짜 범위 ("day", "week", "month"). pivot_date와 함께 사용
         source: 뉴스 출처 필터
@@ -181,7 +181,7 @@ def semantic_search(
     Examples:
         # make_semantic_query와 함께 사용
         query = make_semantic_query(coin_names=["BTC"], intent_type="price_reason")
-        semantic_search(query, top_k=15, similarity_threshold=0.65)
+        semantic_search(query, top_k=15, similarity_threshold=0.1)
 
         # 직접 쿼리 사용
         semantic_search("BTC 가격 상승 원인", top_k=10)

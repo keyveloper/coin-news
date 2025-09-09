@@ -52,7 +52,7 @@ class NewsRepository:
         self,
         query: str,
         top_k: int = 10,
-        similarity_threshold: float = 0.7,
+        similarity_threshold: float = 0.0,
         pivot_date: Optional[int] = None,
         date_range: Optional[Literal["day", "week", "month"]] = None,
         title_contains: Optional[str] = None,

@@ -36,7 +36,7 @@ class PriceRepository:
         self.db: Database = self.mongo_client.get_database(self._database_name)
         self.collection: Collection = self.db[self._collection_name]
 
-        print(f"✅ PriceRepository 초기화 완료 (DB: {self._database_name}, Collection: {self._collection_name})")
+        print(f"[OK] PriceRepository initialized (DB: {self._database_name}, Collection: {self._collection_name})")
 
     def _get_daily_close_values(self, coin_name: str, date_start: str, date_end: str) -> List[PriceData]:
         """일별 종가 데이터 조회 (내부 메서드)"""
@@ -79,7 +79,7 @@ class PriceRepository:
             results = list(self.collection.aggregate(pipeline))
             return [PriceData(**result) for result in results]
         except Exception as e:
-            print(f"❌ 날짜별 close 값 조회 실패: {e}")
+            print(f"[ERROR] Daily close query failed: {e}")
             return []
 
     def _get_hourly_price_data(self, coin_name: str, pivot_time: int) -> List[PriceHourlyData]:
@@ -109,7 +109,7 @@ class PriceRepository:
 
             return formatted_results
         except Exception as e:
-            print(f"❌ 시간별 가격 조회 실패: {e}")
+            print(f"[ERROR] Hourly price query failed: {e}")
             return []
 
     # ==================== 통합 메서드 (Public) ====================
@@ -162,7 +162,7 @@ class PriceRepository:
             return self._get_daily_close_values(coin_name, date_start, date_end)
 
         except Exception as e:
-            print(f"❌ 통합 가격 조회 실패: {e}")
+            print(f"[ERROR] Price query failed: {e}")
             return []
 
 
