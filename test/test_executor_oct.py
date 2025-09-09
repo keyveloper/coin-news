@@ -106,29 +106,22 @@ def test_with_october_date():
         print(f"        top_k: {q['search_params'].get('top_k')}, threshold: {q['search_params'].get('similarity_threshold')}")
 
     # Execute full plan
+    original_query = "10월 중순 비트코인 급등 원인"
     print(f"\n  Executing full plan...")
+    print(f"  Original Query: {original_query}")
     executor = get_executor_agent()
-    result = executor.do_plan(query_plan)
+    result = executor.do_plan(query_plan, original_query=original_query)
 
     print(f"\n  PlanResult:")
+    print(f"    original_query: {result.original_query}")
+    print(f"    intent_type: {result.intent_type}")
+    print(f"    coin_names: {result.coin_names}")
     print(f"    total_actions: {result.total_actions}")
     print(f"    successful_actions: {result.successful_actions}")
     print(f"    failed_actions: {result.failed_actions}")
-    print(f"    coin_names: {result.coin_names}")
-    print(f"    price_data_count: {sum(len(v) for v in result.collected_coin_prices.values())}")
-    print(f"    news_chunks_count: {len(result.collected_news_chunks)}")
-    print(f"    generated_queries: {len(result.generated_queries)}")
 
     if result.errors:
         print(f"    errors: {result.errors}")
-
-    # News Results
-    if result.collected_news_chunks:
-        print(f"\n  Collected News (top 5):")
-        for i, chunk in enumerate(result.collected_news_chunks[:5], 1):
-            score = f"{chunk.similarity_score:.3f}" if chunk.similarity_score else "N/A"
-            title = chunk.title[:45] if chunk.title else "N/A"
-            print(f"    [{i}] sim={score} | {title}...")
 
     # Summaries
     if result.price_summary:
@@ -139,9 +132,18 @@ def test_with_october_date():
         print(f"\n  News Summary:")
         print(f"    {result.news_summary[:300]}...")
 
-    if result.combined_summary:
-        print(f"\n  Combined Summary:")
-        print(f"    {result.combined_summary[:300]}...")
+    # ==================== Layer 4: ScriptAgent ====================
+    print("\n" + "-"*70)
+    print("[Layer 4] ScriptAgent - Generate final response")
+    print("-"*70)
+
+    from app.agent.script_agent import get_script_agent
+
+    script_agent = get_script_agent()
+    final_script = script_agent.generate(result)
+
+    print(f"\n  Final Script:")
+    print(f"    {final_script[:500]}...")
 
     # ==================== Final Summary ====================
     print("\n" + "="*70)
@@ -149,8 +151,6 @@ def test_with_october_date():
     print("="*70)
     for q in generated_queries:
         print(f"\n  [{q['idx']}] \"{q['query']}\"")
-
-    print(f"\n  Total news collected: {len(result.collected_news_chunks)}")
 
 
 if __name__ == "__main__":

@@ -20,42 +20,14 @@ logger = logging.getLogger(__name__)
 
 # ==================== Semantic Query Generator ====================
 
-SEMANTIC_QUERY_SYSTEM_PROMPT = """당신은 암호화폐 뉴스 벡터DB 검색을 위한 키워드 생성 전문가입니다.
+SEMANTIC_QUERY_SYSTEM_PROMPT = """암호화폐 뉴스 검색용 키워드 생성기.
 
-[역할]
-주어진 파라미터를 분석하여 벡터 DB 시맨틱 검색에 최적화된 **키워드 조합**을 생성합니다.
+규칙:
+- 키워드만 출력 (문장 금지)
+- 3-8개 키워드, 공백 구분
+- 코인 심볼 + 핵심 명사만
 
-[파라미터 설명]
-- coin_names: 검색 대상 코인 심볼 (BTC, ETH 등)
-- intent_type: 검색 의도
-  - market_trend: 시장 동향, 가격 추세 관련
-  - price_reason: 가격 변동 원인, 호재/악재 분석
-  - news_summary: 일반 뉴스, 소식, 이슈
-- event_magnitude: 이벤트 강도
-  - surge: 급등, 상승 관련
-  - plunge: 급락, 하락 관련
-  - any: 특정 방향 없음
-- event_keywords: 특정 이벤트 키워드 (규제, ETF, 해킹 등)
-- custom_context: 추가 컨텍스트
-
-[키워드 생성 규칙 - 중요]
-1. **오직 키워드만** 출력 (문장 형태 금지)
-2. 조사, 접속사, 불필요한 수식어 제외
-3. 코인 심볼 + 핵심 명사/동사만 사용
-4. 3-8개의 키워드를 공백으로 구분
-5. 한글과 영어 키워드 혼용 가능
-
-[좋은 예시]
-- BTC 비트코인 급등 ETF 승인 기관투자
-- ETH 이더리움 하락 SEC 규제 소송
-- BTC 가격 상승 반감기 채굴 난이도
-
-[나쁜 예시 - 이렇게 하지 마세요]
-- "비트코인이 급등한 이유를 알아보기 위한 검색" (문장 형태)
-- "BTC의 가격이 상승했습니다" (조사 포함)
-
-[출력]
-공백으로 구분된 키워드만 출력하세요. 설명, 따옴표, 문장 없이 키워드만."""
+예시: BTC 비트코인 급등 ETF 승인 기관투자"""
 
 
 def _get_query_generator_llm():
@@ -204,114 +176,4 @@ def semantic_search(
 
     except Exception as e:
         logger.error(f"semantic_search failed: {e}")
-        return []
-
-
-# ==================== Query Extractor from News ====================
-
-QUERY_EXTRACTOR_SYSTEM_PROMPT = """당신은 암호화폐 뉴스 벡터DB 검색을 위한 키워드 추출 전문가입니다.
-
-[역할]
-뉴스 제목과 본문을 분석하여 연관된 **키워드 조합**들을 추출합니다.
-
-[분석 관점]
-1. 핵심 주제: 코인명, 이벤트명, 인물명
-2. 연관 이벤트: 관련된 다른 사건이나 배경
-3. 원인/결과: 원인이 되는 사건, 예상되는 영향
-4. 관련 코인: 직접 언급된 코인 외 연관된 코인들
-5. 시장 맥락: 거시경제, 규제, 기술적 요인
-
-[키워드 생성 규칙 - 중요]
-1. **오직 키워드만** 출력 (문장 형태 금지)
-2. 조사(이, 가, 를, 에 등) 절대 사용 금지
-3. 접속사, 수식어 제외
-4. 핵심 명사만 추출 (3-6개 키워드/줄)
-5. 3-7줄의 서로 다른 키워드 조합 생성
-6. 한글과 영어 키워드 혼용 가능
-
-[좋은 예시]
-BTC ETF 승인 SEC 블랙록
-비트코인 기관투자 그레이스케일 펀드
-암호화폐 금리 인하 연준 유동성
-
-[나쁜 예시 - 이렇게 하지 마세요]
-"비트코인이 급등한 이유" (조사 포함, 문장 형태)
-"SEC의 ETF 승인에 대한 시장 반응" (조사 포함)
-
-[출력 형식]
-각 키워드 조합을 줄바꿈으로 구분.
-설명, 번호, 따옴표 없이 키워드만 출력."""
-
-
-@traceable(name="QueryExtractor.extract", run_type="llm")
-def _extract_queries_from_content(title: str, document: str) -> List[str]:
-    """
-    LLM을 사용하여 뉴스 콘텐츠에서 연관 쿼리 추출
-
-    LangSmith에서 추적:
-    - Input: 뉴스 제목, 본문
-    - Output: 추출된 쿼리 리스트
-    """
-    llm = _get_query_generator_llm()
-
-    user_prompt = f"""다음 뉴스를 분석하여 연관된 검색 쿼리들을 생성하세요:
-
-[제목]
-{title}
-
-[본문]
-{document}
-
-위 뉴스와 연관된 다양한 관점의 검색 쿼리들을 생성하세요."""
-
-    messages = [
-        {"role": "system", "content": QUERY_EXTRACTOR_SYSTEM_PROMPT},
-        {"role": "user", "content": user_prompt}
-    ]
-
-    response = llm.invoke(messages)
-
-    # 줄바꿈으로 분리하여 리스트로 변환
-    queries = [q.strip() for q in response.content.strip().split('\n') if q.strip()]
-    return queries
-
-
-@tool
-def extract_queries_from_news(
-    title: str,
-    document: str
-) -> List[str]:
-    """
-    VectorNewsResult의 title과 document를 분석하여 연관 검색 쿼리 리스트를 생성합니다.
-    LLM이 뉴스 콘텐츠를 분석하여 다양한 관점의 추가 검색 쿼리를 생성합니다.
-
-    Args:
-        title: 뉴스 제목
-        document: 뉴스 본문/요약
-
-    Returns:
-        연관 검색 쿼리 문자열 리스트 (3-7개)
-
-    Examples:
-        # VectorNewsResult에서 쿼리 추출
-        news = semantic_search("BTC ETF", top_k=1)[0]
-        queries = extract_queries_from_news(news.title, news.document)
-        # → ["BTC ETF SEC 승인 규제", "비트코인 기관투자 유입", "암호화폐 시장 전망 분석", ...]
-    """
-    try:
-        if not title and not document:
-            logger.warning("Both title and document are empty")
-            return []
-
-        # 빈 값 처리
-        title = title or ""
-        document = document or ""
-
-        queries = _extract_queries_from_content(title, document)
-
-        logger.info(f"Extracted {len(queries)} queries from news")
-        return queries
-
-    except Exception as e:
-        logger.error(f"Failed to extract queries from news: {e}")
         return []
