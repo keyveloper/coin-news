@@ -1,0 +1,20 @@
+현재 상황을 분석하고 최적의 처리 경로를 결정하세요.
+
+[사용자 메시지]
+{user_message}
+
+[세션 상태]
+- 이전 대화 존재: {has_previous}
+- 이전 분석 코인: {previous_coins}
+- 이전 분석 유형: {previous_intent}
+- 이전 결과 존재: {has_previous_result}
+
+[선택 가능한 경로]
+1. FULL_PIPELINE: 전체 파이프라인 실행 (analyze → plan → execute → script)
+2. REUSE_ANALYSIS: 기존 분석 재사용 (plan → execute → script)
+3. REUSE_RESULT: 기존 결과로 재생성 (script만)
+4. DIRECT_RESPONSE: 도구 없이 직접 응답
+
+경로를 선택하고 이유를 설명하세요. 반드시 다음 형식으로 응답:
+PATH: [경로명]
+REASON: [이유]
