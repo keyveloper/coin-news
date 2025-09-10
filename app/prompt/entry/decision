@@ -8,12 +8,24 @@
 - 이전 분석 코인: {previous_coins}
 - 이전 분석 유형: {previous_intent}
 - 이전 결과 존재: {has_previous_result}
+- 이전 응답 요약: {previous_response_summary}
 
 [선택 가능한 경로]
 1. FULL_PIPELINE: 전체 파이프라인 실행 (analyze → plan → execute → script)
+   - 완전히 새로운 코인 또는 완전히 다른 주제
 2. REUSE_ANALYSIS: 기존 분석 재사용 (plan → execute → script)
+   - 같은 코인의 다른 측면 분석
 3. REUSE_RESULT: 기존 결과로 재생성 (script만)
+   - 이전 분석 결과를 다른 관점으로 설명
+   - 후속 질문: "왜?", "더 자세히", "원인이 뭐야?"
+   - 관련 요인 질문: Fed 금리, 인플레이션, 규제 등 (이전 분석과 연관된 거시경제 요인)
 4. DIRECT_RESPONSE: 도구 없이 직접 응답
+   - 인사, 감사, 일반 질문
+
+[중요 판단 기준]
+- 사용자 질문이 이전 분석의 "원인", "배경", "영향 요인"을 묻는다면 → REUSE_RESULT
+- 암호화폐 가격에 영향을 주는 거시경제 요인(Fed, 금리, 인플레이션, 규제)에 대한 질문은 이전 분석과 관련된 것으로 판단
+- 코인 이름이 직접 언급되지 않아도 맥락상 연결되면 관련 질문임
 
 경로를 선택하고 이유를 설명하세요. 반드시 다음 형식으로 응답:
 PATH: [경로명]

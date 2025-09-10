@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from langchain_anthropic import ChatAnthropic
-from langsmith import traceable
+from langsmith import traceable, trace
 
 # Entry Tools - @tool 데코레이터 버전과 직접 호출 버전
 from app.tools.entry_tools import (
@@ -82,7 +82,6 @@ class EntryAgent:
             max_tokens=1024
         )
 
-    @traceable(name="EntryAgent.process", run_type="chain")
     def process(
         self,
         user_message: str,
@@ -105,108 +104,132 @@ class EntryAgent:
                 "path": str  # 실행된 경로 (debug용)
             }
         """
-        logger.info(f"Processing message: {user_message}")
-        session_context = session_context or {}
+        # 전체 워크플로우를 하나의 trace로 묶음
+        with trace(
+            name="ChatWorkflow",
+            run_type="chain",
+            inputs={"user_message": user_message, "has_context": bool(session_context)}
+        ) as workflow_trace:
+            logger.info(f"Processing message: {user_message}")
+            session_context = session_context or {}
 
-        # 세션 컨텍스트 분석
-        has_previous = bool(session_context.get("last_normalized_query"))
-        previous_coins = session_context.get("coins", [])
-        previous_intent = session_context.get("last_normalized_query", {}).get("intent_type") if has_previous else None
-        previous_result = session_context.get("last_plan_result")
+            # 세션 컨텍스트 분석
+            # session_id: Chainlit에서 자동 관리 (cl.user_session)
+            # 여기서는 "재사용 가능한 이전 분석 결과"가 있는지 확인
+            previous_analysis = session_context.get("last_normalized_query")
+            previous_result = session_context.get("last_plan_result")
+            has_reusable_context = bool(previous_analysis and previous_result)
 
-        # LLM으로 경로 결정
-        llm = self._get_llm()
+            previous_coins = session_context.get("coins", [])
+            previous_intent = previous_analysis.get("intent_type") if previous_analysis else None
 
-        decision_prompt = self.decision_prompt_template.format(
-            user_message=user_message,
-            has_previous=has_previous,
-            previous_coins=previous_coins,
-            previous_intent=previous_intent,
-            has_previous_result=bool(previous_result)
-        )
+            # 이전 응답 요약 생성 (LLM이 관련성 판단에 사용)
+            previous_response_summary = "없음"
+            if previous_result:
+                price_summary = previous_result.get("price_summary", "")[:200]
+                news_summary = previous_result.get("news_summary", "")[:200]
+                if price_summary or news_summary:
+                    previous_response_summary = f"가격: {price_summary}... / 뉴스: {news_summary}..."
 
-        messages = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": decision_prompt}
-        ]
+            # LLM으로 경로 결정
+            llm = self._get_llm()
 
-        response = llm.invoke(messages)
-        decision_text = response.content
+            decision_prompt = self.decision_prompt_template.format(
+                user_message=user_message,
+                has_previous=has_reusable_context,
+                previous_coins=previous_coins,
+                previous_intent=previous_intent,
+                has_previous_result=bool(previous_result),
+                previous_response_summary=previous_response_summary
+            )
 
-        # 경로 파싱
-        path = "FULL_PIPELINE"  # default
-        if "PATH:" in decision_text:
-            path_line = [l for l in decision_text.split("\n") if "PATH:" in l][0]
-            path = path_line.split("PATH:")[1].strip().upper()
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": decision_prompt}
+            ]
 
-        logger.info(f"Decision path: {path}")
+            response = llm.invoke(messages)
+            decision_text = response.content
 
-        # 경로별 실행
-        context_update = {}
+            # 경로 파싱
+            path = "FULL_PIPELINE"  # default
+            if "PATH:" in decision_text:
+                path_line = [l for l in decision_text.split("\n") if "PATH:" in l][0]
+                path = path_line.split("PATH:")[1].strip().upper()
 
-        try:
-            if path == "DIRECT_RESPONSE" or "DIRECT" in path:
-                # 직접 응답 생성
-                direct_prompt = f"사용자 메시지에 간단히 응답하세요: {user_message}"
-                direct_response = llm.invoke([{"role": "user", "content": direct_prompt}])
+            logger.info(f"Decision path: {path}")
+
+            # 경로별 실행
+            context_update = {}
+
+            try:
+                if path == "DIRECT_RESPONSE" or "DIRECT" in path:
+                    # 직접 응답 생성
+                    direct_prompt = f"사용자 메시지에 간단히 응답하세요: {user_message}"
+                    direct_response = llm.invoke([{"role": "user", "content": direct_prompt}])
+                    result = {
+                        "response": direct_response.content,
+                        "context_update": {},
+                        "path": "DIRECT_RESPONSE"
+                    }
+
+                elif path == "REUSE_RESULT" and previous_result:
+                    # 기존 결과로 스크립트만 재생성
+                    result_dict = previous_result.copy()
+                    result_dict["original_query"] = user_message  # 새 질문으로 교체
+                    final_response = call_generate_script(result_dict)
+                    result = {
+                        "response": final_response,
+                        "context_update": {},
+                        "path": "REUSE_RESULT"
+                    }
+
+                elif path == "REUSE_ANALYSIS" and previous_analysis:
+                    # 기존 분석으로 계획부터 실행
+                    normalized_query = previous_analysis
+                    plan_dict = call_make_plan(normalized_query)
+                    result_dict = call_execute_plan(plan_dict, user_message)
+                    final_response = call_generate_script(result_dict)
+
+                    context_update = {
+                        "last_plan_result": result_dict
+                    }
+                    result = {
+                        "response": final_response,
+                        "context_update": context_update,
+                        "path": "REUSE_ANALYSIS"
+                    }
+
+                else:
+                    # 전체 파이프라인
+                    normalized_query = call_analyze_query(user_message)
+                    plan_dict = call_make_plan(normalized_query)
+                    result_dict = call_execute_plan(plan_dict, user_message)
+                    final_response = call_generate_script(result_dict)
+
+                    context_update = {
+                        "last_normalized_query": normalized_query,
+                        "last_plan_result": result_dict,
+                        "coins": normalized_query.get("target", {}).get("coin", [])
+                    }
+                    result = {
+                        "response": final_response,
+                        "context_update": context_update,
+                        "path": "FULL_PIPELINE"
+                    }
+
+                # trace에 output 기록
+                workflow_trace.end(outputs={"path": result["path"], "success": True})
+                return result
+
+            except Exception as e:
+                logger.error(f"Error in path {path}: {e}", exc_info=True)
+                workflow_trace.end(outputs={"path": path, "success": False, "error": str(e)})
                 return {
-                    "response": direct_response.content,
+                    "response": f"처리 중 오류가 발생했습니다: {str(e)}",
                     "context_update": {},
-                    "path": "DIRECT_RESPONSE"
+                    "path": f"ERROR_{path}"
                 }
-
-            elif path == "REUSE_RESULT" and previous_result:
-                # 기존 결과로 스크립트만 재생성
-                result_dict = previous_result.copy()
-                result_dict["original_query"] = user_message  # 새 질문으로 교체
-                final_response = call_generate_script(result_dict)
-                return {
-                    "response": final_response,
-                    "context_update": {},
-                    "path": "REUSE_RESULT"
-                }
-
-            elif path == "REUSE_ANALYSIS" and has_previous:
-                # 기존 분석으로 계획부터 실행
-                normalized_query = session_context["last_normalized_query"]
-                plan_dict = call_make_plan(normalized_query)
-                result_dict = call_execute_plan(plan_dict, user_message)
-                final_response = call_generate_script(result_dict)
-
-                context_update = {
-                    "last_plan_result": result_dict
-                }
-                return {
-                    "response": final_response,
-                    "context_update": context_update,
-                    "path": "REUSE_ANALYSIS"
-                }
-
-            else:
-                # 전체 파이프라인
-                normalized_query = call_analyze_query(user_message)
-                plan_dict = call_make_plan(normalized_query)
-                result_dict = call_execute_plan(plan_dict, user_message)
-                final_response = call_generate_script(result_dict)
-
-                context_update = {
-                    "last_normalized_query": normalized_query,
-                    "last_plan_result": result_dict,
-                    "coins": normalized_query.get("target", {}).get("coin", [])
-                }
-                return {
-                    "response": final_response,
-                    "context_update": context_update,
-                    "path": "FULL_PIPELINE"
-                }
-
-        except Exception as e:
-            logger.error(f"Error in path {path}: {e}", exc_info=True)
-            return {
-                "response": f"처리 중 오류가 발생했습니다: {str(e)}",
-                "context_update": {},
-                "path": f"ERROR_{path}"
-            }
 
 
 def get_entry_agent() -> EntryAgent:
